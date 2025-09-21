@@ -1,0 +1,18 @@
+# Ignore everything at repo root
+/*
+
+# Keep these at root
+!.gitignore
+!README.md
+
+# Keep EVERYTHING under MODELS (recursively)
+!MODELS/**
+
+# But ignore common junk inside MODELS
+MODELS/**/__pycache__/
+MODELS/**/*.pyc
+MODELS/**/.env
+MODELS/**/.vscode/
+MODELS/**/.idea/
+MODELS/**/.DS_Store
+MODELS/**/.ipynb_checkpoints/
