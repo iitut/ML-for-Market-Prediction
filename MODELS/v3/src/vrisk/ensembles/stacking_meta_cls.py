@@ -328,5 +328,4 @@ class StackingMetaClassifier(BaseEstimator, ClassifierMixin):
             weights[i] = abs(self.utility_matrix[class_idx, class_idx])
             
         return weights
-    
-    ###
+ 
