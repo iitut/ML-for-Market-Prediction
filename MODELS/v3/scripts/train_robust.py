@@ -71,30 +71,229 @@ class RobustModelTrainer:
                 mlflow.start_run(run_name=self.run_id)
                 mlflow.log_params(OmegaConf.to_container(config))
             except Exception as e:
-                logger.warning("Could not get feature importance from ensemble")
-                
-        # Create report writer
-        writer = ReportWriter(
-            output_dir=str(self.output_dir),
-            run_id=self.run_id,
-            config=OmegaConf.to_container(self.config)
+                logger.warning(f"MLflow initialization failed: {e}")
+                self.config.tracking.backend = 'none'
+            
+    def _generate_run_id(self) -> str:
+        """Generate unique run ID."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        config_hash = hashlib.md5(
+            json.dumps(OmegaConf.to_container(self.config)).encode()
+        ).hexdigest()[:8]
+        return f"{timestamp}_{config_hash}"
+    
+    def run(self):
+        """Execute complete training pipeline with robust error handling."""
+        logger.info(f"Starting robust training run: {self.run_id}")
+        
+        try:
+            # 1. Load and validate data with robust handling
+            logger.info("=" * 50)
+            logger.info("STEP 1: Loading data with robust NA handling")
+            minute_df, data_quality = self._load_data_robust()
+            
+            # 2. Create labels
+            logger.info("=" * 50)
+            logger.info("STEP 2: Creating labels")
+            daily_df = self._create_labels(minute_df)
+            
+            # 3. Generate features with NA awareness
+            logger.info("=" * 50)
+            logger.info("STEP 3: Generating features (NA-aware)")
+            features_df = self._generate_features_robust(minute_df, daily_df)
+            
+            # 4. Prepare for modeling
+            logger.info("=" * 50)
+            logger.info("STEP 4: Preparing data for modeling")
+            X, y, dates, feature_names = self._prepare_modeling_data(features_df)
+            
+            # 5. Train models
+            logger.info("=" * 50)
+            logger.info("STEP 5: Training ensemble models")
+            models, evaluation_results = self._train_models_robust(X, y, dates, feature_names)
+            
+            # 6. Optimize decision policy
+            logger.info("=" * 50)
+            logger.info("STEP 6: Optimizing decision policy")
+            policy = self._optimize_decision_policy(models, X, y, dates)
+            
+            # 7. Generate comprehensive report
+            logger.info("=" * 50)
+            logger.info("STEP 7: Generating evaluation report")
+            self._generate_report(models, evaluation_results, features_df, policy)
+            
+            # 8. Save outputs
+            logger.info("=" * 50)
+            logger.info("STEP 8: Saving all outputs")
+            self._save_outputs(models, features_df, policy)
+            
+            logger.info(f"Training completed successfully: {self.run_id}")
+            logger.info(f"Outputs saved to: {self.output_dir}")
+            
+        except Exception as e:
+            logger.error(f"Training failed: {str(e)}", exc_info=True)
+            raise
+        finally:
+            if self.config.tracking.backend == 'mlflow':
+                try:
+                    mlflow.end_run()
+                except:
+                    pass
+    
+    def _load_data_robust(self) -> tuple:
+        """Load data with robust NA handling."""
+        logger.info(f"Loading data from {self.config.data.master_parquet}")
+        
+        # Use robust loader
+        from src.vrisk.io.load_master_robust import RobustMasterDataLoader
+        
+        loader = RobustMasterDataLoader(
+            self.config.data.master_parquet,
+            use_parquet=True,
+            validate=True,
+            handle_missing='fill',
+            min_data_fraction=0.7
         )
         
-        # Generate report
-        if evaluation_results:
-            report_path = writer.generate_report(
-                evaluation_results={'classification': evaluation_results},
-                model_info={
-                    'n_base_models': len(models.get('ensemble').base_models if 'ensemble' in models else {}),
-                    'feature_names': list(features_df.columns),
-                    'missing_data': self.missing_data_report
-                },
-                feature_importance=feature_importance
-            )
-            logger.info(f"Report generated: {report_path}")
-        else:
-            logger.warning("No evaluation results available for report generation")
+        df = loader.load()
+        
+        # Get data quality report
+        data_quality = loader.missing_columns_report
+        self.missing_data_report = data_quality
+        
+        # Add calendar features
+        calendar = TradingCalendar()
+        df = calendar.add_session_features(df)
+        
+        # Log data info
+        logger.info(f"Loaded {len(df):,} minute records")
+        logger.info(f"Date range: {df['session_date'].min()} to {df['session_date'].max()}")
+        
+        if data_quality.get('overall_missing_pct', 0) > 0:
+            logger.warning(f"Overall missing data: {data_quality.get('overall_missing_pct', 0):.2f}%")
             
+        # Get usable date range based on critical columns
+        critical_cols = ['ohlcv_open', 'ohlcv_close', 'ohlcv_volume']
+        start_date, end_date = loader.get_usable_date_range(critical_cols)
+        logger.info(f"Usable date range for critical features: {start_date} to {end_date}")
+        
+        # Track data hash
+        data_hash = loader._data_hash
+        
+        if self.config.tracking.backend == 'mlflow':
+            try:
+                mlflow.log_metric("n_minutes", len(df))
+                mlflow.log_param("data_hash", data_hash)
+                mlflow.log_metric("missing_data_pct", data_quality.get('overall_missing_pct', 0))
+            except:
+                pass
+            
+        return df, data_quality
+    
+    def _create_labels(self, minute_df: pl.DataFrame) -> pl.DataFrame:
+        """Create classification and regression labels."""
+        logger.info("Calculating minute returns")
+        
+        # Calculate minute returns
+        minute_df = calculate_minute_returns(minute_df)
+        
+        # Calculate daily RV measures
+        logger.info("Calculating daily volatility measures")
+        rv_df = calculate_daily_rv(minute_df)
+        
+        # Create crash/boom labels
+        logger.info("Creating crash/boom/normal labels")
+        daily_df = create_crash_boom_labels(
+            minute_df, 
+            rv_df,
+            gammas=self.config.targets.gammas,
+            volatility_estimator='RV'
+        )
+        
+        # Add volatility targets
+        daily_df = daily_df.with_columns([
+            # Next-day log RV target
+            pl.col('log_RV_daily').shift(-1).alias('target_log_rv_1d'),
+            
+            # Next-day return for quantiles
+            pl.col('daily_return').shift(-1).alias('target_return_1d')
+        ])
+        
+        # Log label statistics
+        gamma = self.config.targets.default_gamma
+        label_col = f'label_gamma_{gamma:.1f}'
+        label_counts = daily_df[label_col].value_counts()
+        
+        logger.info(f"Label distribution (gamma={gamma}):")
+        for row in label_counts.to_dicts():
+            logger.info(f"  {row[label_col]}: {row['count']}")
+            
+        if self.config.tracking.backend == 'mlflow':
+            try:
+                mlflow.log_metric("n_days", len(daily_df))
+                for row in label_counts.to_dicts():
+                    mlflow.log_metric(f"n_{row[label_col]}", row['count'])
+            except:
+                pass
+                
+        return daily_df
+    
+    def _generate_features_robust(self, minute_df: pl.DataFrame, daily_df: pl.DataFrame) -> pl.DataFrame:
+        """Generate features with proper NA handling."""
+        logger.info("Generating features with NA awareness")
+        
+        # Track which features are generated
+        feature_status = {}
+        
+        # Volatility features (should always work)
+        try:
+            logger.info("  - Volatility features")
+            vol_features = VolatilityFeatures()
+            daily_df = vol_features.generate(daily_df)
+            feature_status['volatility'] = 'success'
+        except Exception as e:
+            logger.warning(f"Failed to generate volatility features: {e}")
+            feature_status['volatility'] = f'failed: {e}'
+            
+        # Microstructure features (may fail if IEX data missing)
+        try:
+            logger.info("  - Microstructure features")
+            micro_features = MicrostructureFeatures(handle_na='forward_fill')
+            micro_df = micro_features.generate(minute_df)
+            daily_df = daily_df.join(micro_df, on='session_date', how='left')
+            feature_status['microstructure'] = 'success'
+        except Exception as e:
+            logger.warning(f"Failed to generate microstructure features: {e}")
+            feature_status['microstructure'] = f'failed: {e}'
+            
+        # Path features
+        try:
+            logger.info("  - Path features")
+            path_features = PathFeatures()
+            daily_df = path_features.generate(minute_df, daily_df)
+            feature_status['path'] = 'success'
+        except Exception as e:
+            logger.warning(f"Failed to generate path features: {e}")
+            feature_status['path'] = f'failed: {e}'
+            
+        # Log feature generation status
+        logger.info(f"Feature generation status: {feature_status}")
+        
+        # Count total features
+        feature_cols = [c for c in daily_df.columns 
+                       if c.startswith(('vr_', 'iex_', 'path_', 'liq_', 'macro_', 'time_', 'event_'))]
+        logger.info(f"Generated {len(feature_cols)} features successfully")
+        
+        # Track feature statistics
+        if self.config.tracking.backend == 'mlflow':
+            try:
+                mlflow.log_metric("n_features", len(feature_cols))
+                mlflow.log_dict(feature_status, "feature_generation_status.json")
+            except:
+                pass
+            
+        return daily_df
+        
     def _prepare_modeling_data(self, features_df: pl.DataFrame) -> tuple:
         """Prepare data for modeling with proper NA handling."""
         logger.info("Preparing modeling data")
@@ -148,125 +347,6 @@ class RobustModelTrainer:
             X = np.nan_to_num(X, nan=0.0)
             
         return X, y, dates, feature_cols
-    
-    def _save_outputs(self, models: dict, features_df: pl.DataFrame, policy: DecisionPolicy):
-        """Save all outputs and artifacts."""
-        logger.info("Saving outputs")
-        
-        # Create directories
-        models_dir = self.output_dir / 'models'
-        models_dir.mkdir(exist_ok=True)
-        
-        # Save feature data
-        features_path = self.output_dir / 'features.parquet'
-        features_df.write_parquet(features_path)
-        logger.info(f"Features saved to {features_path}")
-        
-        # Save configuration
-        config_path = self.output_dir / 'config.yaml'
-        with open(config_path, 'w') as f:
-            OmegaConf.save(self.config, f)
-            
-        # Save missing data report
-        missing_report_path = self.output_dir / 'missing_data_report.json'
-        with open(missing_report_path, 'w') as f:
-            json.dump(self.missing_data_report, f, indent=2, default=str)
-            
-        # Save run metadata
-        metadata = {
-            'run_id': self.run_id,
-            'timestamp': datetime.now().isoformat(),
-            'config_hash': hashlib.md5(
-                json.dumps(OmegaConf.to_container(self.config)).encode()
-            ).hexdigest(),
-            'data_shape': features_df.shape,
-            'n_features': len([c for c in features_df.columns 
-                             if c.startswith(('vr_', 'iex_', 'path_'))]),
-            'missing_data_pct': self.missing_data_report.get('overall_missing_pct', 0)
-        }
-        
-        with open(self.output_dir / 'metadata.json', 'w') as f:
-            json.dump(metadata, f, indent=2)
-            
-        logger.info(f"All outputs saved to {self.output_dir}")
-        
-        # Log artifacts to MLflow
-        if self.config.tracking.backend == 'mlflow':
-            try:
-                mlflow.log_artifacts(str(self.output_dir))
-            except:
-                pass
-
-
-@hydra.main(version_base=None, config_path="../configs", config_name="default")
-def main(cfg: DictConfig) -> None:
-    """Main entry point."""
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(f'training_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-        ]
-    )
-    
-    # Override with correct data path if needed
-    if 'paths' in cfg:
-        cfg.data.master_parquet = cfg.paths.data.master_parquet
-        cfg.data.master_csv = cfg.paths.data.master_csv
-    
-    # Print configuration
-    logger.info("Configuration:")
-    logger.info(OmegaConf.to_yaml(cfg))
-    
-    # Run training
-    trainer = RobustModelTrainer(cfg)
-    trainer.run()
-
-
-if __name__ == "__main__":
-    main()Failed to generate volatility features: {e}")
-            feature_status['volatility'] = f'failed: {e}'
-            
-        # Microstructure features (may fail if IEX data missing)
-        try:
-            logger.info("  - Microstructure features")
-            micro_features = MicrostructureFeatures(handle_na='forward_fill')
-            micro_df = micro_features.generate(minute_df)
-            daily_df = daily_df.join(micro_df, on='session_date', how='left')
-            feature_status['microstructure'] = 'success'
-        except Exception as e:
-            logger.warning(f"Failed to generate microstructure features: {e}")
-            feature_status['microstructure'] = f'failed: {e}'
-            
-        # Path features
-        try:
-            logger.info("  - Path features")
-            path_features = PathFeatures()
-            daily_df = path_features.generate(minute_df, daily_df)
-            feature_status['path'] = 'success'
-        except Exception as e:
-            logger.warning(f"Failed to generate path features: {e}")
-            feature_status['path'] = f'failed: {e}'
-            
-        # Log feature generation status
-        logger.info(f"Feature generation status: {feature_status}")
-        
-        # Count total features
-        feature_cols = [c for c in daily_df.columns 
-                       if c.startswith(('vr_', 'iex_', 'path_', 'liq_', 'macro_', 'time_', 'event_'))]
-        logger.info(f"Generated {len(feature_cols)} features successfully")
-        
-        # Track feature statistics
-        if self.config.tracking.backend == 'mlflow':
-            try:
-                mlflow.log_metric("n_features", len(feature_cols))
-                mlflow.log_dict(feature_status, "feature_generation_status.json")
-            except:
-                pass
-            
-        return daily_df
     
     def _train_models_robust(self, X: np.ndarray, y: np.ndarray, 
                             dates: pd.Series, feature_names: list) -> tuple:
@@ -476,137 +556,105 @@ if __name__ == "__main__":
             try:
                 feature_importance = models['ensemble'].get_feature_importance()
             except:
-                logger.warning(f"MLflow initialization failed: {e}")
-                self.config.tracking.backend = 'none'
-            
-    def _generate_run_id(self) -> str:
-        """Generate unique run ID."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config_hash = hashlib.md5(
-            json.dumps(OmegaConf.to_container(self.config)).encode()
-        ).hexdigest()[:8]
-        return f"{timestamp}_{config_hash}"
-    
-    def run(self):
-        """Execute complete training pipeline with robust error handling."""
-        logger.info(f"Starting robust training run: {self.run_id}")
-        
-        try:
-            # 1. Load and validate data with robust handling
-            logger.info("=" * 50)
-            logger.info("STEP 1: Loading data with robust NA handling")
-            minute_df, data_quality = self._load_data_robust()
-            
-            # 2. Create labels
-            logger.info("=" * 50)
-            logger.info("STEP 2: Creating labels")
-            daily_df = self._create_labels(minute_df)
-            
-            # 3. Generate features with NA awareness
-            logger.info("=" * 50)
-            logger.info("STEP 3: Generating features (NA-aware)")
-            features_df = self._generate_features_robust(minute_df, daily_df)
-            
-            # 4. Prepare for modeling
-            logger.info("=" * 50)
-            logger.info("STEP 4: Preparing data for modeling")
-            X, y, dates, feature_names = self._prepare_modeling_data(features_df)
-            
-            # 5. Train models
-            logger.info("=" * 50)
-            logger.info("STEP 5: Training ensemble models")
-            models, evaluation_results = self._train_models_robust(X, y, dates, feature_names)
-            
-            # 6. Optimize decision policy
-            logger.info("=" * 50)
-            logger.info("STEP 6: Optimizing decision policy")
-            policy = self._optimize_decision_policy(models, X, y, dates)
-            
-            # 7. Generate comprehensive report
-            logger.info("=" * 50)
-            logger.info("STEP 7: Generating evaluation report")
-            self._generate_report(models, evaluation_results, features_df, policy)
-            
-            # 8. Save outputs
-            logger.info("=" * 50)
-            logger.info("STEP 8: Saving all outputs")
-            self._save_outputs(models, features_df, policy)
-            
-            logger.info(f"Training completed successfully: {self.run_id}")
-            logger.info(f"Outputs saved to: {self.output_dir}")
-            
-        except Exception as e:
-            logger.error(f"Training failed: {str(e)}", exc_info=True)
-            raise
-        finally:
-            if self.config.tracking.backend == 'mlflow':
-                try:
-                    mlflow.end_run()
-                except:
-                    pass
-    
-    def _load_data_robust(self) -> tuple:
-        """Load data with robust NA handling."""
-        logger.info(f"Loading data from {self.config.data.master_parquet}")
-        
-        # Use robust loader
-        from src.vrisk.io.load_master_robust import RobustMasterDataLoader
-        
-        loader = RobustMasterDataLoader(
-            self.config.data.master_parquet,
-            use_parquet=True,
-            validate=True,
-            handle_missing='fill',
-            min_data_fraction=0.7
+                logger.warning("Could not get feature importance from ensemble")
+                
+        # Create report writer
+        writer = ReportWriter(
+            output_dir=str(self.output_dir),
+            run_id=self.run_id,
+            config=OmegaConf.to_container(self.config)
         )
         
-        df = loader.load()
+        # Generate report
+        if evaluation_results:
+            report_path = writer.generate_report(
+                evaluation_results={'classification': evaluation_results},
+                model_info={
+                    'n_base_models': len(models.get('ensemble').base_models if 'ensemble' in models else {}),
+                    'feature_names': list(features_df.columns),
+                    'missing_data': self.missing_data_report
+                },
+                feature_importance=feature_importance
+            )
+            logger.info(f"Report generated: {report_path}")
+        else:
+            logger.warning("No evaluation results available for report generation")
+    
+    def _save_outputs(self, models: dict, features_df: pl.DataFrame, policy: DecisionPolicy):
+        """Save all outputs and artifacts."""
+        logger.info("Saving outputs")
         
-        # Get data quality report
-        data_quality = loader.missing_columns_report
-        self.missing_data_report = data_quality
+        # Create directories
+        models_dir = self.output_dir / 'models'
+        models_dir.mkdir(exist_ok=True)
         
-        # Add calendar features
-        calendar = TradingCalendar()
-        df = calendar.add_session_features(df)
+        # Save feature data
+        features_path = self.output_dir / 'features.parquet'
+        features_df.write_parquet(features_path)
+        logger.info(f"Features saved to {features_path}")
         
-        # Log data info
-        logger.info(f"Loaded {len(df):,} minute records")
-        logger.info(f"Date range: {df['session_date'].min()} to {df['session_date'].max()}")
-        
-        if data_quality.get('overall_missing_pct', 0) > 0:
-            logger.warning(f"Overall missing data: {data_quality.get('overall_missing_pct', 0):.2f}%")
+        # Save configuration
+        config_path = self.output_dir / 'config.yaml'
+        with open(config_path, 'w') as f:
+            OmegaConf.save(self.config, f)
             
-        # Get usable date range based on critical columns
-        critical_cols = ['ohlcv_open', 'ohlcv_close', 'ohlcv_volume']
-        start_date, end_date = loader.get_usable_date_range(critical_cols)
-        logger.info(f"Usable date range for critical features: {start_date} to {end_date}")
+        # Save missing data report
+        missing_report_path = self.output_dir / 'missing_data_report.json'
+        with open(missing_report_path, 'w') as f:
+            json.dump(self.missing_data_report, f, indent=2, default=str)
+            
+        # Save run metadata
+        metadata = {
+            'run_id': self.run_id,
+            'timestamp': datetime.now().isoformat(),
+            'config_hash': hashlib.md5(
+                json.dumps(OmegaConf.to_container(self.config)).encode()
+            ).hexdigest(),
+            'data_shape': features_df.shape,
+            'n_features': len([c for c in features_df.columns 
+                             if c.startswith(('vr_', 'iex_', 'path_'))]),
+            'missing_data_pct': self.missing_data_report.get('overall_missing_pct', 0)
+        }
         
-        # Track data hash
-        data_hash = loader._data_hash
+        with open(self.output_dir / 'metadata.json', 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        logger.info(f"All outputs saved to {self.output_dir}")
         
+        # Log artifacts to MLflow
         if self.config.tracking.backend == 'mlflow':
             try:
-                mlflow.log_metric("n_minutes", len(df))
-                mlflow.log_param("data_hash", data_hash)
-                mlflow.log_metric("missing_data_pct", data_quality.get('overall_missing_pct', 0))
+                mlflow.log_artifacts(str(self.output_dir))
             except:
                 pass
-            
-        return df, data_quality
+
+
+@hydra.main(version_base=None, config_path="../configs", config_name="default")
+def main(cfg: DictConfig) -> None:
+    """Main entry point."""
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(f'training_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        ]
+    )
     
-    def _generate_features_robust(self, minute_df: pl.DataFrame, daily_df: pl.DataFrame) -> pl.DataFrame:
-        """Generate features with proper NA handling."""
-        logger.info("Generating features with NA awareness")
-        
-        # Track which features are generated
-        feature_status = {}
-        
-        # Volatility features (should always work)
-        try:
-            logger.info("  - Volatility features")
-            vol_features = VolatilityFeatures()
-            daily_df = vol_features.generate(daily_df)
-            feature_status['volatility'] = 'success'
-        except Exception as e:
-            logger.warning(f"
+    # Override with correct data path if needed
+    if 'paths' in cfg:
+        cfg.data.master_parquet = cfg.paths.data.master_parquet
+        cfg.data.master_csv = cfg.paths.data.master_csv
+    
+    # Print configuration
+    logger.info("Configuration:")
+    logger.info(OmegaConf.to_yaml(cfg))
+    
+    # Run training
+    trainer = RobustModelTrainer(cfg)
+    trainer.run()
+
+
+if __name__ == "__main__":
+    main()
