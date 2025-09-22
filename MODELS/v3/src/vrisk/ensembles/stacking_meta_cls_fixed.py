@@ -1,6 +1,7 @@
 """
 Stacking ensemble for classification with utility-aware optimization.
 Combines multiple base learners using a meta-classifier.
+FIXED VERSION - Correct implementation.
 """
 
 import numpy as np
@@ -328,3 +329,42 @@ class StackingMetaClassifier(BaseEstimator, ClassifierMixin):
             weights[i] = abs(self.utility_matrix[class_idx, class_idx])
             
         return weights
+    
+    def get_feature_importance(self) -> pd.DataFrame:
+        """Get feature importance from meta-model if available."""
+        if self.meta_model_ is None:
+            raise ValueError("Model not trained yet")
+            
+        importance_df = pd.DataFrame()
+        
+        if hasattr(self.meta_model_, 'feature_importances_'):
+            # For tree-based models
+            feature_names = []
+            for name in sorted(self.base_models_.keys()):
+                if self.use_proba:
+                    for i in range(len(self.classes_)):
+                        feature_names.append(f'{name}_class_{i}')
+                else:
+                    feature_names.append(name)
+                    
+            importance_df = pd.DataFrame({
+                'feature': feature_names[:len(self.meta_model_.feature_importances_)],
+                'importance': self.meta_model_.feature_importances_
+            })
+            
+        elif hasattr(self.meta_model_, 'coef_'):
+            # For linear models
+            feature_names = []
+            for name in sorted(self.base_models_.keys()):
+                if self.use_proba:
+                    for i in range(len(self.classes_)):
+                        feature_names.append(f'{name}_class_{i}')
+                else:
+                    feature_names.append(name)
+                    
+            importance_df = pd.DataFrame({
+                'feature': feature_names[:self.meta_model_.coef_.shape[1]],
+                'importance': np.abs(self.meta_model_.coef_).mean(axis=0)
+            })
+            
+        return importance_df.sort_values('importance', ascending=False)
