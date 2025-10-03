@@ -1,0 +1,47 @@
+
+================================================================================
+FINAL MODEL PERFORMANCE REPORT
+================================================================================
+
+📊 OVERALL STATISTICS:
+----------------------------------------
+Total predictions made: 1421
+Date range: 2020-01-02 00:00:00 to 2025-08-27 00:00:00
+
+🎯 CLASSIFICATION PERFORMANCE:
+----------------------------------------
+7-Class Market Direction Accuracy: 7.11%
+  extreme_crash   :  0.00% (n=47)
+  crash           :  1.53% (n=131)
+  mild_down       :  0.00% (n=233)
+  normal          :  0.00% (n=477)
+  mild_up         :  0.00% (n=336)
+  boom            : 45.28% (n=159)
+  extreme_boom    : 71.05% (n=38)
+
+📈 REGRESSION PERFORMANCE:
+----------------------------------------
+
+Next Day Return:
+  MAE:         8.8358
+  RMSE:        8.8761
+  Correlation: 0.024
+
+Next Week Return:
+  MAE:         8.8372
+  RMSE:        8.8775
+  Correlation: 0.066
+
+🎲 PROBABILITY PREDICTIONS:
+----------------------------------------
+
+🤝 ENSEMBLE MODEL WEIGHTS:
+----------------------------------------
+Weights are dynamically calculated based on validation performance
+
+💡 KEY INSIGHTS:
+----------------------------------------
+Average predicted daily return: -883.4962%
+Average predicted volatility: 0.0001
+
+================================================================================

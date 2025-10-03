@@ -1,0 +1,62 @@
+# @package _global_
+# Cross-validation configuration for VOL-RISK LAB
+
+# Number of CV folds
+n_splits: 8
+
+# Minimum training days required
+min_train_days: 252  # 1 year
+
+# Test window size (days)
+test_days: 63  # ~3 months
+
+# Embargo period after test (days)
+embargo_days: 1  # 1 full trading day
+
+# Purge period before test (days)
+purge_days: 1  # 1 full trading day
+
+# Use anchored (expanding) window vs rolling
+anchored: true
+
+# Test set configuration
+test_start: "2025-01-01"
+test_end: "2025-08-29"
+
+# Validation set for hyperparameter tuning
+validation_size: 0.2  # Fraction of training data
+
+# Time-based features
+time_features:
+  # Look-back windows for features
+  lookback_days: [5, 10, 20, 60, 120]
+  
+  # Minute-level windows
+  lookback_minutes: [30, 60, 120, 390]
+  
+# Feature selection
+feature_selection:
+  enabled: false
+  method: "mutual_info"  # or "boruta", "lasso"
+  top_k: 100
+  
+# Sample weighting
+sample_weighting:
+  # Weight recent samples more
+  time_decay: false
+  decay_halflife: 252  # days
+  
+  # Weight by market conditions
+  regime_weighting: false
+  high_vol_weight: 1.5
+  
+# Parallel processing
+parallel:
+  n_jobs: -1  # Use all CPUs
+  backend: "loky"  # or "threading", "multiprocessing"
+  
+# Random seed for reproducibility
+seed: 42
+
+# Logging
+verbose: 1  # 0: silent, 1: progress, 2: detailed

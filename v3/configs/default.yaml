@@ -1,0 +1,143 @@
+# Main configuration for VOL-RISK LAB v3
+defaults:
+  - paths: paths
+  - cv: cv
+  - features: core
+  - models: lgbm_cls
+  - _self_
+
+# Project settings
+project:
+  name: "vol-risk-lab"
+  version: "3.0.0"
+  run_id: "${now:%Y-%m-%d_%H%M%S}"
+  seed: 42
+  device: "cpu"  # or "cuda"
+  
+
+
+  
+# Target configuration
+targets:
+  # Gamma thresholds for crash/boom classification
+  gammas: [1.5, 2.0, 2.5, 3.0]
+  default_gamma: 2.0
+  
+  # Horizons
+  horizons:
+    primary: 1  # Next-day
+    extended: [5, 21]  # 5-day and 21-day (implement after V1)
+    
+  # Quantiles for tertiary head
+  quantiles: [0.05, 0.50, 0.95]
+  
+# Decision policy configuration
+decision:
+  mode: "forced"  # "standard" or "forced"
+  
+  # Cost matrix for utility calculation
+  # Rows: predicted (Crash, Normal, Boom)
+  # Cols: actual (Crash, Normal, Boom)
+  cost_matrix:
+    crash_crash: 2.0      # True positive (correct crash prediction)
+    crash_normal: -0.5    # False positive
+    crash_boom: -1.0      # False positive (missed boom)
+    normal_crash: -2.0    # False negative (missed crash)
+    normal_normal: 0.1    # True negative
+    normal_boom: -1.5     # False negative (missed boom)
+    boom_crash: -1.0      # False positive (predicted boom, got crash)
+    boom_normal: -0.5     # False positive
+    boom_boom: 2.0        # True positive (correct boom prediction)
+    
+  # Threshold tuning
+  threshold_search:
+    tau_c_range: [0.2, 0.5]  # Crash threshold range
+    tau_b_range: [0.2, 0.5]  # Boom threshold range
+    n_trials: 100
+    
+  # Calibration
+  calibration:
+    method: "temperature"
+    cv_folds: 3
+    
+# Ensemble configuration
+ensemble:
+  # Base models for classification head
+  classification_bases:
+    - "lightgbm"
+    - "xgboost"
+    - "catboost"
+    - "elastic_net"
+    - "svm_rbf"
+    - "random_forest"
+    - "mlp"
+    - "tcn"  # Add after V1
+    - "evt"  # Add after V1
+    
+  # Base models for volatility head
+  volatility_bases:
+    - "har_rv"
+    - "elastic_net"
+    - "lightgbm"
+    - "xgboost"
+    - "catboost"
+    - "random_forest"
+    - "tcn"  # Add after V1
+    
+  # Base models for quantile head  
+  quantile_bases:
+    - "lightgbm_quantile"
+    - "quantile_forest"
+    - "mlp_pinball"
+    
+  # Meta-learner settings
+  meta:
+    classification: "lightgbm"
+    volatility: "elastic_net"
+    quantile: "lightgbm"
+    
+  # Regime-aware gating (post-V1)
+  regime_gating:
+    enabled: false
+    vr_quintiles: 5
+    include_opx: true
+    
+# Class imbalance handling
+imbalance:
+  class_weight: "balanced"
+  sample_weight_power: 1.0  # Weight = (1 + |z|)^power
+  focal_loss:
+    enabled: false
+    gamma: 2.0
+    
+# Logging and tracking
+tracking:
+  backend: "mlflow"  # or "wandb"
+  experiment_name: "vol-risk-lab-v3"
+  log_models: true
+  log_artifacts: true
+  log_metrics: true
+  log_params: true
+  
+# Computational resources
+compute:
+  n_jobs: -1  # Use all CPUs
+  chunk_size: 10000
+  cache_features: true
+  use_gpu: false
+  
+# Data quality checks
+validation:
+  check_monotone_timestamps: true
+  check_session_integrity: true
+  check_na_policy: true
+  check_future_leakage: true
+  
+# Reporting
+reporting:
+  generate_html: true
+  generate_pdf: true
+  chart_dpi: 150
+  chart_size_multiplier: 2
+  color_palette: "colorblind"
+  bootstrap_iterations: 1000

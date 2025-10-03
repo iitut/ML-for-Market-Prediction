@@ -1,0 +1,38 @@
+# @package _global_
+
+models:
+  lgbm_cls:
+    params:
+      n_estimators: 400
+      learning_rate: 0.05
+      num_leaves: 31
+      max_depth: -1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_lambda: 0.0
+      min_child_samples: 20
+      random_state: 42
+
+# (You can keep ensemble knobs here too if you want them grouped with models)
+ensemble:
+  classification_bases:
+    - lightgbm
+    - xgboost
+    - catboost
+    - elastic_net
+    - svm_rbf
+    - random_forest
+  volatility_bases:
+    - har_rv
+    - elastic_net
+    - lightgbm
+    - xgboost
+    - catboost
+    - random_forest
+  quantile_bases:
+    - lightgbm_quantile
+    - quantile_forest
+  meta:
+    classification: lightgbm
+    volatility: elastic_net
+    quantile: lightgbm

@@ -1,0 +1,215 @@
+# VOL-RISK LAB Implementation Plan
+
+## Current Status: Core Infrastructure Completed
+
+### Phase 1: Project Setup & Core Infrastructure
+- [ ] Created project structure (pyproject.toml)
+- [ ] Setup configuration system (Hydra/OmegaConf)
+- [ ] Implemented data loading and validation (load_master.py)
+- [ ] Built calendar and timezone utilities (sessions.py)
+
+### Phase 2: Labeling System  
+- [ ] Implemented minute returns calculation
+- [ ] Built RV/BV/JV calculators
+- [ ] Created crash/boom/normal labeling system
+- [ ] Added volatility targets (log RV)
+
+### Phase 3: Feature Engineering (Partial)
+- [ ] Volatility estimators (RV, BV, JV, Parkinson, etc.)
+- [ ] Microstructure features (IEX spread, imbalance, etc.)
+- [ ] Path and seasonality features
+- [ ] Liquidity metrics
+- [ ] Regime and memory features (EWMA, VR)
+- [ ] Comparative and macro features
+- [ ] Event flags
+
+### Phase 4: Modeling Stack (Partial)
+- [ ] LightGBM classifier implementation
+- [ ] XGBoost, CatBoost implementations
+- [ ] Random Forest, SVM, Elastic Net
+- [ ] Neural network models (MLP, TCN)
+- [ ] Ensemble stacking framework
+- [ ] Calibration system
+- [ ] Decision policy layer
+
+### Phase 5: Training & Evaluation (Core)
+- [ ] Cross-validation framework with purging/embargo
+- [ ] Main training script
+- [ ] Classification evaluation metrics
+- [ ] Volatility regression evaluation
+- [ ] Quantile evaluation
+- [ ] Hyperparameter optimization (Optuna)
+- [ ] Reporting and visualization
+
+## Files Created
+
+### Configuration
+- `pyproject.toml` - Project dependencies and settings
+- `configs/default.yaml` - Main configuration
+- `configs/cv.yaml` - Cross-validation settings
+
+### Data & Calendar
+- `src/vrisk/io/load_master.py` - Data loading with validation
+- `src/vrisk/calendars/sessions.py` - Trading calendar utilities
+
+### Labeling
+- `src/vrisk/labeling/minute_returns.py` - Minute returns calculation
+- `src/vrisk/labeling/rv_daily.py` - RV/BV/JV calculation
+- `src/vrisk/labeling/crash_boom_labels.py` - Classification labels
+
+### Features
+- `src/vrisk/features/vol_rv_bv_jv.py` - Volatility features
+- `src/vrisk/features/microstructure_iex.py` - IEX microstructure
+
+### Models & Training
+- `src/vrisk/models/lgbm_cls.py` - LightGBM classifier
+- `src/vrisk/training/cv_splitter.py` - Time series CV
+- `src/vrisk/ensembles/stacking_meta_cls.py` - Stacking ensemble
+
+### Evaluation & Scripts
+- `src/vrisk/evaluation/eval_classify.py` - Classification metrics
+- `scripts/train.py` - Main training orchestrator
+
+## Next Steps to Complete
+
+### Immediate Priority (Critical Path)
+1. **Complete remaining feature modules:**
+   - Path features (gaps, ranges)
+   - Liquidity features (dollar volume, etc.)
+   - Macro features with proper lag
+   - Time/seasonality encodings
+   - Event flags integration
+
+2. **Implement remaining base models:**
+   - XGBoost classifier
+   - CatBoost classifier
+   - Random Forest
+   - SVM with RBF kernel
+   - Elastic Net logistic
+
+3. **Add volatility regression head:**
+   - HAR-RV baseline
+   - Regression models
+   - Meta-learner for volatility
+
+4. **Implement quantile prediction head:**
+   - Quantile regressors
+   - Conformal prediction
+   - Monotonicity enforcement
+
+5. **Decision policy layer:**
+   - Threshold optimization
+   - Forced-Extremes mode
+   - Utility maximization
+
+6. **Reporting system:**
+   - Generate all required visualizations
+   - Create HTML/PDF reports
+   - Technical appendix generation
+
+## How to Run
+
+1. **Install dependencies:**
+   ```bash
+   pip install -e .
+   ```
+
+2. **Prepare data:**
+   - Ensure master_minute.parquet is at the specified path
+   - Data should be properly formatted per specifications
+
+3. **Run training:**
+   ```bash
+   python scripts/train.py
+   ```
+
+4. **With custom config:**
+   ```bash
+   python scripts/train.py hydra.run.dir=./outputs/$(date +%Y%m%d_%H%M%S)
+   ```
+
+## Key Implementation Notes
+
+### Data Integrity
+- UTC timestamps with NY session_date
+- No pre/post-market data
+- IEX NA handling before 2020-08-28
+- Early close session handling
+
+### Anti-Leakage Controls
+- Purging and embargo in CV
+- Known-by-close rules for daily data
+- Macro data lag enforcement
+- Need to verify all feature calculations
+
+### Model Requirements
+- Class balancing implemented
+- Sample weighting framework
+- OOF prediction generation
+- Need calibration implementation
+- Need regime-aware gating
+
+### Evaluation Metrics
+- AUCPR for crash/boom
+- Utility-based metrics
+- Confusion matrices
+- Need rolling stability analysis
+- Need ablation studies
+
+## Configuration Parameters
+
+Key parameters to tune in `configs/default.yaml`:
+- `targets.gammas`: Crash/boom thresholds
+- `decision.cost_matrix`: Utility values
+- `cv.n_splits`: Number of CV folds
+- `ensemble.classification_bases`: Which models to include
+
+## Validation Checklist
+
+Before production deployment:
+- [ ] Verify no data leakage in features
+- [ ] Test on synthetic data with known patterns
+- [ ] Validate embargo/purge implementation
+- [ ] Check early close handling
+- [ ] Verify IEX NA policy
+- [ ] Test utility optimization
+- [ ] Generate full report
+- [ ] Review technical appendix# VOL-RISK LAB Implementation Plan
+
+## Current Status: Starting Implementation
+
+### Phase 1: Project Setup & Core Infrastructure
+- [ ] Create project structure
+- [ ] Setup configuration system (Hydra/OmegaConf)
+- [ ] Implement data loading and validation
+- [ ] Build calendar and timezone utilities
+
+### Phase 2: Labeling System
+- [ ] Implement minute returns calculation
+- [ ] Build RV/BV/JV calculators
+- [ ] Create crash/boom/normal labeling
+- [ ] Add volatility and quantile targets
+
+### Phase 3: Feature Engineering
+- [ ] Volatility estimators
+- [ ] Path and seasonality features
+- [ ] Liquidity metrics
+- [ ] Microstructure features (IEX)
+- [ ] Regime and memory features
+- [ ] Comparative and macro features
+- [ ] Event flags
+
+### Phase 4: Modeling Stack
+- [ ] Base learners implementation
+- [ ] Ensemble and stacking framework
+- [ ] Calibration system
+- [ ] Decision policy layer
+
+### Phase 5: Training & Evaluation
+- [ ] Cross-validation framework
+- [ ] Hyperparameter optimization
+- [ ] Metrics and evaluation
+- [ ] Reporting and visualization
+
+## Implementation Order
+Following the exact execution order from spec section 10.

@@ -1,0 +1,20 @@
+# @package _global_
+
+# Path configuration for VOL-RISK LAB v3
+
+# Data paths - CORRECTED
+data:
+  base_path: "C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP"
+  master_parquet: "${data.base_path}/Data/master_minute.parquet"  # Fixed path
+  master_csv: "${data.base_path}/Data/master_minute.csv"  # Fixed path
+  
+# Model output paths  
+output:
+  base_path: "C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP/MODELS/v3"
+  artifacts: "${output.base_path}/artifacts"
+  reports: "${output.base_path}/reports"
+  models: "${output.base_path}/models"
+  cache: "${output.base_path}/cache"
+  
+# Create directories if they don't exist
+create_dirs: true

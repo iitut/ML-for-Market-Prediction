@@ -1,0 +1,128 @@
+Guide: git- simple using with extra tools
+
+````markdown
+# Git Helper Tools for Windows
+
+This folder contains helper scripts to make working with Git + GitHub easier.
+
+---
+
+## 🔹 1. One-time sync (commit + push everything)
+
+### Option A: Double-click
+- Run `sync_now.bat` (just double-click it).
+- It will:
+  1. Stage all changes
+  2. Commit with a timestamp message
+  3. Push to GitHub
+
+### Option B: Run in PowerShell
+
+powershell -ExecutionPolicy Bypass -File "tools\git\watch_and_push.ps1"
+
+
+---
+
+## 🔹 2. Continuous auto-sync (watch mode)
+
+If you want **GitHub to update automatically whenever you save a file**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "tools\git\watch_and_push.ps1"
+```
+
+* Keeps running in the background
+* Watches for file changes (created, modified, deleted, renamed)
+* Groups changes (3-second debounce)
+* Commits + pushes automatically
+* Stop it by **closing the PowerShell window**
+
+---
+
+## 🔹 3. Start auto-sync automatically at login
+
+If you want the watcher to start automatically every time you log in:
+
+```powershel
+
+schtasks /Create /F /SC ONLOGON /TN "ML_MP_Git_Watcher" /TR ^
+ "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File ""tools\git\watch_and_push.ps1"""
+```
+
+Remove it later if you don’t want it anymore:
+
+```powershell
+schtasks /Delete /F /TN "ML_MP_Git_Watcher"
+```
+
+---
+
+## 🔹 4. Useful manual Git commands
+
+* See repo status:
+
+```powershell
+git status
+```
+
+* See last 5 commits:
+
+```powershell
+git log --oneline -n 5
+```
+
+* Check which files are tracked by Git LFS:
+
+```powershell
+git lfs ls-files
+```
+
+---
+
+## 🔹 5. Setup on a new machine (Windows)
+
+If you download this repo on another computer:
+
+```powershell
+# Install Git + Git LFS first
+git lfs install
+
+# Clone the repo
+git clone https://github.com/iitut/ML-for-Market-Prediction.git
+cd ML-for-Market-Prediction
+
+# Set your name/email (first time only)
+git config user.name  "Ivan Shytov"
+git config user.email "shytov.iv@gmail.com"
+
+# Use the tools
+tools\git\sync_now.bat
+# or
+powershell -ExecutionPolicy Bypass -File "tools\git\watch_and_push.ps1"
+```
+
+---
+
+## ✅ Summary
+
+* `sync_now.bat` → **one-click sync**
+* `autopush.ps1` → same as above (PowerShell)
+* `watch_and_push.ps1` → **continuous background sync**
+* Scheduled Task → run watcher **automatically at login**
+
+````
+
+---
+
+⚡️ To create it, just run this in PowerShell from repo root:
+
+```powershell
+@"
+# Git Helper Tools for Windows
+
+... (paste the whole content above here) ...
+"@ | Set-Content ".\tools\git\USAGE_windows.md"
+````
+
+---
+

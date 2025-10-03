@@ -1,0 +1,25 @@
+# @package _global_
+
+features:
+  volatility:
+    enabled: true
+    lookback_windows: [5, 10, 20, 60]
+    ewma_lambda: 0.94
+
+  microstructure:
+    enabled: true
+
+  path:
+    enabled: true
+
+  liquidity:
+    enabled: true
+
+  macro_time:
+    enabled: true
+
+  regime_memory:
+    enabled: true
+
+  event_flags:
+    enabled: true
