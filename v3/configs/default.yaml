@@ -13,9 +13,11 @@ project:
   run_id: "${now:%Y-%m-%d_%H%M%S}"
   seed: 42
   device: "cpu"  # or "cuda"
-  
 
-
+# Debug mode (REMOVE LIMITS FOR PRODUCTION)
+debug:
+  enabled: true  # Set to false for full dataset
+  last_n_sessions: 2  # Only used if enabled=true
   
 # Target configuration
 targets:
@@ -70,9 +72,9 @@ ensemble:
     - "elastic_net"
     - "svm_rbf"
     - "random_forest"
-    - "mlp"
-    - "tcn"  # Add after V1
-    - "evt"  # Add after V1
+    # - "mlp"  # Add after V1
+    # - "tcn"  # Add after V1
+    # - "evt"  # Add after V1
     
   # Base models for volatility head
   volatility_bases:
@@ -82,13 +84,13 @@ ensemble:
     - "xgboost"
     - "catboost"
     - "random_forest"
-    - "tcn"  # Add after V1
+    # - "tcn"  # Add after V1
     
   # Base models for quantile head  
   quantile_bases:
     - "lightgbm_quantile"
     - "quantile_forest"
-    - "mlp_pinball"
+    # - "mlp_pinball"
     
   # Meta-learner settings
   meta:
@@ -136,7 +138,7 @@ validation:
 # Reporting
 reporting:
   generate_html: true
-  generate_pdf: true
+  generate_pdf: false
   chart_dpi: 150
   chart_size_multiplier: 2
   color_palette: "colorblind"

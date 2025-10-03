@@ -189,7 +189,7 @@ class CatBoostClassifier:
                                X: np.ndarray, 
                                y: np.ndarray) -> np.ndarray:
         """Compute sample weights based on extremeness."""
-        weights = np.ones()
+        weights = np.ones(len(y))
         return weights
     
     def get_feature_importance(self) -> pd.DataFrame:
