@@ -102,9 +102,9 @@ class RegimeMemoryFeatures:
                          pl.col(f'{self.PREFIX}ewma_rv_{long_span}d'))
                         .alias(f'{self.PREFIX}ewma_ratio_{short_span}_{long_span}d')
                     ])
-                    
+        
         return df
-    
+        
     def _add_vr_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """Add volatility ratio (VR) features."""
         
@@ -132,12 +132,13 @@ class RegimeMemoryFeatures:
             # Calculate VR quintiles
             pl.col(f'{self.PREFIX}vr_20d')
             .qcut(self.vr_quantiles, labels=[str(i) for i in range(self.vr_quantiles)])
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}vr_quintile'),
             
             # VR percentile rank
-            # VR percentile (fixed for Polars compatibility)
-            (pl.col(f'{self.PREFIX}vr_20d').rank().cast(pl.Float64) / pl.len())
+            pl.col(f'{self.PREFIX}vr_20d')
+            .rank()
+            .over(pl.col('session_date').dt.year())  # Simpler grouping
             .alias(f'{self.PREFIX}vr_percentile')
         ])
         
@@ -168,16 +169,16 @@ class RegimeMemoryFeatures:
             .alias(f'{self.PREFIX}vol_trend'),
             
             # Jump regime
-            (pl.col('jump_ratio') > 0.1).cast(pl.Int32)
+            (pl.col('jump_ratio') > 0.1).cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}jump_regime'),
             
             # Mean reversion regime (VR far from 1)
-            (pl.col(f'{self.PREFIX}vr_deviation_20d') > 0.5).cast(pl.Int32)
+            (pl.col(f'{self.PREFIX}vr_deviation_20d') > 0.5).cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}mean_reversion_regime'),
             
             # Clustering regime (consecutive high vol days)
             (pl.col('RV_daily') > pl.col(f'{self.PREFIX}ewma_rv_20d'))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .rolling_sum(window_size=5, min_periods=1)
             .alias(f'{self.PREFIX}vol_clustering')
         ])
@@ -187,12 +188,12 @@ class RegimeMemoryFeatures:
             df = df.with_columns([
                 # OPX in high vol regime
                 (pl.col('is_opx') & (pl.col(f'{self.PREFIX}vol_regime') >= 2))
-                .cast(pl.Int32)
+                .cast(pl.Int32, strict=False)
                 .alias(f'{self.PREFIX}opx_high_vol'),
                 
                 # OPX with mean reversion setup
                 (pl.col('is_opx') & pl.col(f'{self.PREFIX}mean_reversion_regime'))
-                .cast(pl.Int32)
+                .cast(pl.Int32, strict=False)
                 .alias(f'{self.PREFIX}opx_mean_revert')
             ])
             
@@ -266,7 +267,7 @@ class RegimeMemoryFeatures:
             # Volatility regime change
             (pl.col(f'{self.PREFIX}vol_regime') != 
              pl.col(f'{self.PREFIX}vol_regime').shift(1))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}regime_change'),
             
             # Days in current regime
@@ -279,14 +280,14 @@ class RegimeMemoryFeatures:
             # Count transitions in rolling window
             (pl.col(f'{self.PREFIX}vol_regime') != 
              pl.col(f'{self.PREFIX}vol_regime').shift(1))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .rolling_sum(window_size=60, min_periods=30)
             .alias(f'{self.PREFIX}transition_frequency'),
             
             # VR regime stability (consecutive days in same quintile)
             (pl.col(f'{self.PREFIX}vr_quintile') == 
              pl.col(f'{self.PREFIX}vr_quintile').shift(1))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .rolling_sum(window_size=5, min_periods=1)
             .alias(f'{self.PREFIX}vr_stability')
         ])
@@ -298,7 +299,7 @@ class RegimeMemoryFeatures:
                     df = df.with_columns([
                         ((pl.col(f'{self.PREFIX}vol_regime').shift(1) == from_regime) & 
                          (pl.col(f'{self.PREFIX}vol_regime') == to_regime))
-                        .cast(pl.Int32)
+                        .cast(pl.Int32, strict=False)
                         .rolling_sum(window_size=60, min_periods=30)
                         .alias(f'{self.PREFIX}trans_{from_regime}_to_{to_regime}')
                     ])
@@ -344,12 +345,12 @@ class RegimeMemoryFeatures:
             # New high/low indicators
             (pl.col('RV_daily') == 
              pl.col('RV_daily').rolling_max(window_size=252, min_periods=126))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}new_52w_high'),
             
             (pl.col('RV_daily') == 
              pl.col('RV_daily').rolling_min(window_size=252, min_periods=126))
-            .cast(pl.Int32)
+            .cast(pl.Int32, strict=False)
             .alias(f'{self.PREFIX}new_52w_low')
         ])
         

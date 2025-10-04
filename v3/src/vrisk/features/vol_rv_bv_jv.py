@@ -80,7 +80,7 @@ class VolatilityFeatures:
             
             # Jump indicators
             (pl.col('JV_daily') / (pl.col('RV_daily') + 1e-8)).alias(f'{self.PREFIX}jump_ratio'),
-            (pl.col('JV_daily') > pl.col('RV_daily').quantile(0.95)).alias(f'{self.PREFIX}jump_flag'),
+            (pl.col('JV_daily') > pl.col('RV_daily').quantile(0.95)).cast(pl.Int32, strict=False).alias(f'{self.PREFIX}jump_flag'),
             
             # Continuous vs jump components
             ((pl.col('BV_daily') / (pl.col('RV_daily') + 1e-8))).alias(f'{self.PREFIX}continuous_ratio'),
@@ -95,107 +95,67 @@ class VolatilityFeatures:
     
     def _add_ewma_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """Add EWMA features."""
+        alpha = self.ewma_alpha
+        
         return df.with_columns([
             # EWMA of RV
-            pl.col('RV_daily').ewm_mean(alpha=self.ewma_alpha).alias(f'{self.PREFIX}ewma_rv'),
+            pl.col('RV_daily').ewm_mean(alpha=alpha).alias(f'{self.PREFIX}ewma_rv'),
             
             # EWMA of log RV
-            pl.col('log_RV_daily').ewm_mean(alpha=self.ewma_alpha).alias(f'{self.PREFIX}ewma_log_rv'),
+            pl.col(f'{self.PREFIX}log_rv').ewm_mean(alpha=alpha).alias(f'{self.PREFIX}ewma_log_rv'),
             
-            # Volatility ratio (current / EWMA)
-            (pl.col('RV_daily') / pl.col('RV_daily').ewm_mean(alpha=self.ewma_alpha).shift(1))
-            .alias(f'{self.PREFIX}vr'),
-            
-            # EWMA of BV
-            pl.col('BV_daily').ewm_mean(alpha=self.ewma_alpha).alias(f'{self.PREFIX}ewma_bv'),
-            
-            # EWMA of JV
-            pl.col('JV_daily').ewm_mean(alpha=self.ewma_alpha).alias(f'{self.PREFIX}ewma_jv')
+            # EWMA std
+            pl.col('RV_daily').ewm_std(alpha=alpha).alias(f'{self.PREFIX}ewma_std'),
         ])
     
     def _add_rolling_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Add rolling window features."""
+        """Add rolling statistics."""
         for window in self.lookback_windows:
             df = df.with_columns([
                 # Rolling mean
-                pl.col('RV_daily')
-                .rolling_mean(window_size=window, min_periods=max(1, window//2))
-                .alias(f'{self.PREFIX}rv_ma_{window}d'),
+                pl.col('RV_daily').rolling_mean(window_size=window, min_periods=max(1, window//2))
+                .alias(f'{self.PREFIX}rv_ma{window}'),
                 
                 # Rolling std
-                pl.col('RV_daily')
-                .rolling_std(window_size=window, min_periods=max(1, window//2))
-                .alias(f'{self.PREFIX}rv_std_{window}d'),
+                pl.col('RV_daily').rolling_std(window_size=window, min_periods=max(1, window//2))
+                .alias(f'{self.PREFIX}rv_std{window}'),
                 
-                # Rolling max
-                pl.col('RV_daily')
-                .rolling_max(window_size=window, min_periods=max(1, window//2))
-                .alias(f'{self.PREFIX}rv_max_{window}d'),
+                # Rolling max/min
+                pl.col('RV_daily').rolling_max(window_size=window, min_periods=max(1, window//2))
+                .alias(f'{self.PREFIX}rv_max{window}'),
                 
-                # Rolling min
-                pl.col('RV_daily')
-                .rolling_min(window_size=window, min_periods=max(1, window//2))
-                .alias(f'{self.PREFIX}rv_min_{window}d'),
-                
-                # Z-score
-                ((pl.col('RV_daily') - pl.col('RV_daily').rolling_mean(window_size=window, min_periods=max(1, window//2))) /
-                 (pl.col('RV_daily').rolling_std(window_size=window, min_periods=max(1, window//2)) + 1e-8))
-                .alias(f'{self.PREFIX}rv_zscore_{window}d')
+                pl.col('RV_daily').rolling_min(window_size=window, min_periods=max(1, window//2))
+                .alias(f'{self.PREFIX}rv_min{window}'),
             ])
-            
+        
         return df
     
     def _add_regime_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Add regime classification features."""
+        """Add volatility regime indicators."""
         return df.with_columns([
-            # Percentile rank (fixed for Polars compatibility)
-            (pl.col('RV_daily').rank().cast(pl.Float64) / pl.len())
-            .over(pl.col('session_date'))
-            .alias(f'{self.PREFIX}rv_percentile'),
+            # High vol regime
+            (pl.col('RV_daily') > pl.col('RV_daily').rolling_quantile(0.75, window_size=60, min_periods=30))
+            .cast(pl.Int32, strict=False)
+            .alias(f'{self.PREFIX}high_vol_regime'),
             
-            # Quantile bins
-            pl.col('RV_daily')
-            .qcut(5, labels=['very_low', 'low', 'medium', 'high', 'very_high'])
-            .alias(f'{self.PREFIX}rv_quintile'),
-            
-            # High volatility flag
-            (pl.col('RV_daily') > pl.col('RV_daily').rolling_quantile(0.75, window_size=252, min_periods=126))
-            .cast(pl.Int32)
-            .alias(f'{self.PREFIX}high_vol_flag'),
-            
-            # Low volatility flag
-            (pl.col('RV_daily') < pl.col('RV_daily').rolling_quantile(0.25, window_size=252, min_periods=126))
-            .cast(pl.Int32)
-            .alias(f'{self.PREFIX}low_vol_flag')
+            # Low vol regime
+            (pl.col('RV_daily') < pl.col('RV_daily').rolling_quantile(0.25, window_size=60, min_periods=30))
+            .cast(pl.Int32, strict=False)
+            .alias(f'{self.PREFIX}low_vol_regime'),
         ])
     
     def _add_term_structure(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Add volatility term structure features."""
+        """Add term structure features."""
         return df.with_columns([
             # Short vs long term
-            (pl.col(f'{self.PREFIX}rv_ma_5d') / pl.col(f'{self.PREFIX}rv_ma_20d'))
+            (pl.col(f'{self.PREFIX}rv_ma5') / pl.col(f'{self.PREFIX}rv_ma20'))
             .alias(f'{self.PREFIX}term_structure_5_20'),
             
-            (pl.col(f'{self.PREFIX}rv_ma_20d') / pl.col(f'{self.PREFIX}rv_ma_60d'))
-            .alias(f'{self.PREFIX}term_structure_20_60'),
-            
-            # Slope of term structure (simplified)
-            (pl.col(f'{self.PREFIX}rv_ma_5d') - pl.col(f'{self.PREFIX}rv_ma_60d'))
-            .alias(f'{self.PREFIX}term_slope')
+            (pl.col(f'{self.PREFIX}rv_ma10') / pl.col(f'{self.PREFIX}rv_ma60'))
+            .alias(f'{self.PREFIX}term_structure_10_60'),
         ])
     
-    def _validate_features(self, df: pl.DataFrame):
+    def _validate_features(self, df: pl.DataFrame) -> None:
         """Validate generated features."""
         feature_cols = [c for c in df.columns if c.startswith(self.PREFIX)]
-        
-        # Check for infinite values
-        for col in feature_cols:
-            if df[col].is_infinite().any():
-                logger.warning(f"Infinite values found in {col}")
-                
-        # Check for extreme values
-        for col in feature_cols:
-            if df[col].abs().max() > 1e10:
-                logger.warning(f"Extreme values found in {col}")
-                
         logger.info(f"Generated {len(feature_cols)} volatility features")

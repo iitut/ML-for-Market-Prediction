@@ -1,0 +1,183 @@
+data:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP
+  master_parquet: ${data.base_path}/Data/master_minute.parquet
+  master_csv: ${data.base_path}/Data/master_minute.csv
+output:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP/MODELS/v3
+  artifacts: ${output.base_path}/artifacts
+  reports: ${output.base_path}/reports
+  models: ${output.base_path}/models
+  cache: ${output.base_path}/cache
+create_dirs: true
+n_splits: 8
+min_train_days: 252
+test_days: 63
+embargo_days: 1
+purge_days: 1
+anchored: true
+test_start: '2025-01-01'
+test_end: '2025-08-29'
+validation_size: 0.2
+time_features:
+  lookback_days:
+  - 5
+  - 10
+  - 20
+  - 60
+  - 120
+  lookback_minutes:
+  - 30
+  - 60
+  - 120
+  - 390
+feature_selection:
+  enabled: false
+  method: mutual_info
+  top_k: 100
+sample_weighting:
+  time_decay: false
+  decay_halflife: 252
+  regime_weighting: false
+  high_vol_weight: 1.5
+parallel:
+  n_jobs: -1
+  backend: loky
+seed: 42
+verbose: 1
+features:
+  volatility:
+    enabled: true
+    lookback_windows:
+    - 5
+    - 10
+    - 20
+    - 60
+    ewma_lambda: 0.94
+  microstructure:
+    enabled: true
+  path:
+    enabled: true
+  liquidity:
+    enabled: true
+  macro_time:
+    enabled: true
+  regime_memory:
+    enabled: true
+  event_flags:
+    enabled: true
+models:
+  lgbm_cls:
+    params:
+      n_estimators: 400
+      learning_rate: 0.05
+      num_leaves: 31
+      max_depth: -1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_lambda: 0.0
+      min_child_samples: 20
+      random_state: 42
+ensemble:
+  classification_bases:
+  - lightgbm
+  - xgboost
+  - catboost
+  - elastic_net
+  - svm_rbf
+  - random_forest
+  volatility_bases:
+  - har_rv
+  - elastic_net
+  - lightgbm
+  - xgboost
+  - catboost
+  - random_forest
+  quantile_bases:
+  - lightgbm_quantile
+  - quantile_forest
+  meta:
+    classification: lightgbm
+    volatility: elastic_net
+    quantile: lightgbm
+  regime_gating:
+    enabled: false
+    vr_quintiles: 5
+    include_opx: true
+project:
+  name: vol-risk-lab
+  version: 3.0.0
+  run_id: ${now:%Y-%m-%d_%H%M%S}
+  seed: 42
+  device: cpu
+debug:
+  enabled: true
+  last_n_sessions: 100
+targets:
+  gammas:
+  - 1.5
+  - 2.0
+  - 2.5
+  - 3.0
+  default_gamma: 2.0
+  horizons:
+    primary: 1
+    extended:
+    - 5
+    - 21
+  quantiles:
+  - 0.05
+  - 0.5
+  - 0.95
+decision:
+  mode: forced
+  cost_matrix:
+    crash_crash: 2.0
+    crash_normal: -0.5
+    crash_boom: -1.0
+    normal_crash: -2.0
+    normal_normal: 0.1
+    normal_boom: -1.5
+    boom_crash: -1.0
+    boom_normal: -0.5
+    boom_boom: 2.0
+  threshold_search:
+    tau_c_range:
+    - 0.2
+    - 0.5
+    tau_b_range:
+    - 0.2
+    - 0.5
+    n_trials: 100
+  calibration:
+    method: temperature
+    cv_folds: 3
+imbalance:
+  class_weight: balanced
+  sample_weight_power: 1.0
+  focal_loss:
+    enabled: false
+    gamma: 2.0
+tracking:
+  backend: mlflow
+  experiment_name: vol-risk-lab-v3
+  log_models: true
+  log_artifacts: true
+  log_metrics: true
+  log_params: true
+compute:
+  n_jobs: -1
+  chunk_size: 10000
+  cache_features: true
+  use_gpu: false
+validation:
+  check_monotone_timestamps: true
+  check_session_integrity: true
+  check_na_policy: true
+  check_future_leakage: true
+reporting:
+  generate_html: true
+  generate_pdf: false
+  chart_dpi: 150
+  chart_size_multiplier: 2
+  color_palette: colorblind
+  bootstrap_iterations: 1000

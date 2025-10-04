@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import logging
+from matplotlib.backends.backend_pdf import PdfPages
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,87 @@ class ReportWriter:
         plt.tight_layout()
         plt.savefig(self.assets_dir / 'feature_importance.png', dpi=150, bbox_inches='tight')
         plt.close()
+    def generate_pdf_report(self, 
+                        evaluation_results: Dict[str, Any],
+                        model_info: Dict[str, Any]) -> str:
+        """
+        Generate PDF report with all visualizations.
         
+        Args:
+            evaluation_results: Evaluation metrics
+            model_info: Model information
+            
+        Returns:
+            Path to PDF file
+        """
+        pdf_path = self.reports_dir / 'report.pdf'
+        
+        with PdfPages(pdf_path) as pdf:
+            # Page 1: Summary metrics
+            fig, axes = plt.subplots(3, 2, figsize=(11, 14))
+            fig.suptitle(f'VOL-RISK LAB Report - {self.run_id}', fontsize=16, fontweight='bold')
+            
+            summary = evaluation_results['classification']['summary']
+            
+            # Create text summaries
+            axes[0, 0].axis('off')
+            axes[0, 0].text(0.1, 0.9, 'Classification Metrics', fontsize=14, fontweight='bold')
+            axes[0, 0].text(0.1, 0.7, f"AUCPR (Crash): {summary['aucpr_crash']:.3f}", fontsize=12)
+            axes[0, 0].text(0.1, 0.6, f"AUCPR (Boom): {summary['aucpr_boom']:.3f}", fontsize=12)
+            axes[0, 0].text(0.1, 0.5, f"Accuracy: {summary['accuracy']:.1%}", fontsize=12)
+            axes[0, 0].text(0.1, 0.4, f"Expected Utility: {summary['expected_utility']:.3f}", fontsize=12)
+            
+            # Include existing plots
+            # Copy PR curves
+            if (self.assets_dir / 'cls_pr_curves.png').exists():
+                img = plt.imread(self.assets_dir / 'cls_pr_curves.png')
+                axes[1, 0].imshow(img)
+                axes[1, 0].axis('off')
+                axes[1, 0].set_title('PR Curves')
+            
+            # Copy confusion matrix
+            if (self.assets_dir / 'cls_confusion_matrix.png').exists():
+                img = plt.imread(self.assets_dir / 'cls_confusion_matrix.png')
+                axes[1, 1].imshow(img)
+                axes[1, 1].axis('off')
+                axes[1, 1].set_title('Confusion Matrix')
+            
+            plt.tight_layout()
+            pdf.savefig(fig, dpi=150)
+            plt.close()
+            
+            # Add more pages with existing visualizations
+            for img_file in sorted(self.assets_dir.glob('*.png')):
+                fig = plt.figure(figsize=(11, 8.5))
+                img = plt.imread(img_file)
+                plt.imshow(img)
+                plt.axis('off')
+                plt.title(img_file.stem.replace('_', ' ').title())
+                plt.tight_layout()
+                pdf.savefig(fig, dpi=150)
+                plt.close()
+        
+        logger.info(f"PDF report saved to {pdf_path}")
+        return str(pdf_path)
+
+    # Update generate_report method to call PDF generation
+    def generate_report(self,
+                    evaluation_results: Dict[str, Any],
+                    model_info: Dict[str, Any],
+                    feature_importance: pd.DataFrame) -> str:
+        """Generate complete HTML report."""
+        logger.info(f"Generating report for run {self.run_id}")
+        
+        # ... existing code ...
+        
+        # Generate PDF if requested
+        if self.config.get('reporting', {}).get('generate_pdf', False):
+            try:
+                self.generate_pdf_report(evaluation_results, model_info)
+            except Exception as e:
+                logger.error(f"PDF generation failed: {e}")
+        
+        return str(html_path)
     def _save_tables(self, results: Dict[str, Any]):
         """Save all tables as CSV files."""
         

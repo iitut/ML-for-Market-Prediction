@@ -350,8 +350,8 @@ class CompleteModelTrainer:
         
         # Select features
         feature_cols = [c for c in features_df.columns 
-                       if c.startswith(('vr_', 'iex_', 'path_', 'liq_', 'macro_', 
-                                      'time_', 'reg_', 'event_'))]
+                    if c.startswith(('vr_', 'iex_', 'path_', 'liq_', 'macro_', 
+                                    'time_', 'reg_', 'event_'))]
         
         # Remove rows with missing targets
         gamma = self.config.targets.default_gamma
@@ -363,14 +363,33 @@ class CompleteModelTrainer:
             pl.col('target_return_1d').is_not_null()
         )
         
-        # Handle remaining NaNs in features
+        # Handle remaining NaNs in features - FIXED VERSION
         for col in feature_cols:
-            if col in clean_df.columns:
-                null_count = clean_df[col].null_count()
-                if null_count > 0:
-                    median_val = clean_df[col].median()
+            if col not in clean_df.columns:
+                continue
+                
+            null_count = clean_df[col].null_count()
+            if null_count > 0:
+                # Get column dtype
+                dtype = clean_df[col].dtype
+                
+                # Handle based on dtype
+                if dtype == pl.Boolean:
+                    # For boolean columns, fill with False
                     clean_df = clean_df.with_columns(
-                        pl.col(col).fill_null(median_val if median_val is not None else 0)
+                        pl.col(col).fill_null(False)
+                    )
+                elif dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64]:
+                    # For integer columns, fill with 0
+                    clean_df = clean_df.with_columns(
+                        pl.col(col).fill_null(0)
+                    )
+                else:
+                    # For float columns, use median
+                    median_val = clean_df[col].median()
+                    fill_val = median_val if median_val is not None else 0.0
+                    clean_df = clean_df.with_columns(
+                        pl.col(col).fill_null(fill_val)
                     )
                     
         # Convert to numpy
@@ -381,7 +400,7 @@ class CompleteModelTrainer:
         dates = clean_df['session_date'].to_pandas()
         
         # Final NaN check
-        X = np.nan_to_num(X, nan=0.0)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
         logger.info(f"Prepared data shapes:")
         logger.info(f"  X: {X.shape}")

@@ -45,8 +45,16 @@ class PathFeatures:
         # Calculate intraday features from minute data
         intraday_features = self._calculate_intraday_features(minute_df)
         
-        # Merge with daily data (with suffix to avoid conflicts)
-        df = daily_df.join(intraday_features, on='session_date', how='left', suffix='_intraday')
+        # Merge with daily data - use left join and handle duplicates
+        # First, identify which columns already exist in daily_df
+        overlap_cols = set(intraday_features.columns) & set(daily_df.columns)
+        overlap_cols.discard('session_date')  # Keep session_date for join
+        
+        if overlap_cols:
+            logger.warning(f"Dropping overlapping columns from intraday features: {overlap_cols}")
+            intraday_features = intraday_features.drop(list(overlap_cols))
+        
+        df = daily_df.join(intraday_features, on='session_date', how='left')
         
         # Add gap features
         df = self._add_gap_features(df)
@@ -67,111 +75,96 @@ class PathFeatures:
     
     def _calculate_intraday_features(self, minute_df: pl.DataFrame) -> pl.DataFrame:
         """Calculate intraday path features from minute data."""
-        features = []
+        
+        # Collect all intraday aggregations
+        agg_exprs = []
         
         # Last N minutes features
         for n_min in self.last_n_minutes:
-            # Get last N minutes of each day
-            last_n = (
-                minute_df.sort('timestamp')
-                .group_by('session_date')
-                .agg([
-                    # Return over last N minutes
-                    (pl.col('minute_return')
-                     .tail(n_min)
-                     .sum())
-                    .alias(f'{self.PREFIX}last_{n_min}min_return'),
-                    
-                    # Volatility over last N minutes
-                    (pl.col('minute_return')
-                     .tail(n_min)
-                     .std())
-                    .alias(f'{self.PREFIX}last_{n_min}min_vol'),
-                    
-                    # Max/min in last N minutes
-                    (pl.col('ohlcv_close')
-                     .tail(n_min)
-                     .max() / 
-                     pl.col('ohlcv_close')
-                     .tail(n_min)
-                     .min() - 1)
-                    .alias(f'{self.PREFIX}last_{n_min}min_range'),
-                    
-                    # Volume concentration
-                    (pl.col('ohlcv_volume')
-                     .tail(n_min)
-                     .sum() / 
-                     pl.col('ohlcv_volume').sum())
-                    .alias(f'{self.PREFIX}last_{n_min}min_vol_pct')
-                ])
-            )
-            features.append(last_n)
+            agg_exprs.extend([
+                # Return over last N minutes
+                pl.col('minute_return').tail(n_min).sum()
+                .alias(f'{self.PREFIX}last_{n_min}min_return'),
+                
+                # Volatility over last N minutes
+                pl.col('minute_return').tail(n_min).std()
+                .alias(f'{self.PREFIX}last_{n_min}min_vol'),
+                
+                # Max/min in last N minutes
+                (pl.col('ohlcv_close').tail(n_min).max() / 
+                 pl.col('ohlcv_close').tail(n_min).min() - 1)
+                .alias(f'{self.PREFIX}last_{n_min}min_range'),
+                
+                # Volume concentration
+                (pl.col('ohlcv_volume').tail(n_min).sum() / 
+                 pl.col('ohlcv_volume').sum())
+                .alias(f'{self.PREFIX}last_{n_min}min_vol_pct')
+            ])
         
         # Intraday path statistics
-        intraday_stats = (
-            minute_df.group_by('session_date')
-            .agg([
-                # High/Low times
-                (pl.col('ohlcv_high').arg_max() / pl.len())
-                .alias(f'{self.PREFIX}high_time_pct'),
-                
-                (pl.col('ohlcv_low').arg_min() / pl.len())
-                .alias(f'{self.PREFIX}low_time_pct'),
-                
-                # Path efficiency (close-to-close return / sum of absolute returns)
-                (pl.col('minute_return').sum() / 
-                 (pl.col('minute_return').abs().sum() + 1e-8))
-                .alias(f'{self.PREFIX}path_efficiency'),
-                
-                # Number of direction changes
-                ((pl.col('minute_return').sign() != 
-                  pl.col('minute_return').sign().shift(1))
-                 .sum())
-                .alias(f'{self.PREFIX}direction_changes'),
-                
-                # Maximum drawdown
-                ((pl.col('ohlcv_close').max() - pl.col('ohlcv_close').min()) / 
-                 pl.col('ohlcv_close').max())
-                .alias(f'{self.PREFIX}intraday_drawdown')
-            ])
-        )
-        features.append(intraday_stats)
-        
-        # Combine all features
-        result = features[0]
-        for feat_df in features[1:]:
-            result = result.join(feat_df, on='session_date', how='outer')
+        agg_exprs.extend([
+            # High/Low times
+            (pl.col('ohlcv_high').arg_max() / pl.len())
+            .alias(f'{self.PREFIX}high_time_pct'),
             
+            (pl.col('ohlcv_low').arg_min() / pl.len())
+            .alias(f'{self.PREFIX}low_time_pct'),
+            
+            # Path efficiency
+            (pl.col('minute_return').sum() / 
+             (pl.col('minute_return').abs().sum() + 1e-8))
+            .alias(f'{self.PREFIX}path_efficiency'),
+            
+            # Number of direction changes
+            ((pl.col('minute_return').sign() != 
+              pl.col('minute_return').sign().shift(1))
+             .sum())
+            .alias(f'{self.PREFIX}direction_changes'),
+            
+            # Maximum drawdown
+            ((pl.col('ohlcv_close').max() - pl.col('ohlcv_close').min()) / 
+             pl.col('ohlcv_close').max())
+            .alias(f'{self.PREFIX}intraday_drawdown')
+        ])
+        
+        # Aggregate by session_date
+        result = minute_df.group_by('session_date').agg(agg_exprs)
+        
         return result
     
     def _add_gap_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """Add overnight gap features."""
         return df.with_columns([
-            # Overnight gap (already calculated in RV module)
-            pl.col('overnight_gap').alias(f'{self.PREFIX}gap'),
+            # Overnight gap (use existing if available)
+            pl.when(pl.col('overnight_gap').is_not_null())
+            .then(pl.col('overnight_gap'))
+            .otherwise(
+                (pl.col('daily_open') / pl.col('daily_close').shift(1)).log()
+            )
+            .alias(f'{self.PREFIX}gap'),
             
             # Gap size (absolute)
-            pl.col('overnight_gap').abs().alias(f'{self.PREFIX}gap_abs'),
+            pl.col(f'{self.PREFIX}gap').abs().alias(f'{self.PREFIX}gap_abs'),
             
             # Gap direction
-            pl.col('overnight_gap').sign().alias(f'{self.PREFIX}gap_direction'),
+            pl.col(f'{self.PREFIX}gap').sign().alias(f'{self.PREFIX}gap_direction'),
             
             # Rolling gap statistics
-            pl.col('overnight_gap')
+            pl.col(f'{self.PREFIX}gap')
             .rolling_mean(window_size=5, min_periods=1)
             .alias(f'{self.PREFIX}gap_ma5'),
             
-            pl.col('overnight_gap')
+            pl.col(f'{self.PREFIX}gap')
             .rolling_std(window_size=20, min_periods=5)
             .alias(f'{self.PREFIX}gap_vol20'),
             
             # Gap vs previous close
-            (pl.col('overnight_gap') / 
+            (pl.col(f'{self.PREFIX}gap') / 
              (pl.col('daily_close').shift(1).abs() + 1e-8))
             .alias(f'{self.PREFIX}gap_pct'),
             
             # Cumulative gap over last N days
-            pl.col('overnight_gap')
+            pl.col(f'{self.PREFIX}gap')
             .rolling_sum(window_size=5, min_periods=1)
             .alias(f'{self.PREFIX}gap_cum5')
         ])
@@ -200,7 +193,7 @@ class PathFeatures:
              (pl.col('daily_high') - pl.col('daily_low') + 1e-8))
             .alias(f'{self.PREFIX}close_position'),
             
-            # Body vs range (close-open vs high-low)
+            # Body vs range
             ((pl.col('daily_close') - pl.col('daily_open')).abs() / 
              (pl.col('daily_high') - pl.col('daily_low') + 1e-8))
             .alias(f'{self.PREFIX}body_ratio'),
@@ -239,15 +232,9 @@ class PathFeatures:
                 
                 # Number of positive days
                 (pl.col('daily_return') > 0)
-                .cast(pl.Int32)
+                .cast(pl.Int32, strict=False)
                 .rolling_sum(window_size=window, min_periods=1)
                 .alias(f'{self.PREFIX}pos_days_{window}d'),
-                
-                # Longest streak
-                ((pl.col('daily_return') > 0)
-                 .cast(pl.Int32)
-                 .rolling_max(window_size=window, min_periods=1))
-                .alias(f'{self.PREFIX}win_streak_{window}d')
             ])
             
         return df
@@ -255,7 +242,7 @@ class PathFeatures:
     def _add_path_characteristics(self, df: pl.DataFrame) -> pl.DataFrame:
         """Add path characteristic features."""
         return df.with_columns([
-            # Momentum (various windows)
+            # Momentum
             (pl.col('daily_close') / pl.col('daily_close').shift(5) - 1)
             .alias(f'{self.PREFIX}momentum_5d'),
             
@@ -275,8 +262,7 @@ class PathFeatures:
              pl.col('daily_low').rolling_min(window_size=20, min_periods=5) - 1)
             .alias(f'{self.PREFIX}dist_from_low20'),
             
-            # Trend strength (linear regression slope)
-            # Simplified: use correlation with time index
+            # Trend strength
             pl.col('daily_close')
             .rolling_map(
                 lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0,
@@ -292,14 +278,9 @@ class PathFeatures:
         
         # Check for infinite values
         for col in feature_cols:
-            if col in df.columns and df[col].is_infinite().any():
-                logger.warning(f"Found infinite values in {col}")
-                # Replace with nulls
-                df = df.with_columns(
-                    pl.when(pl.col(col).is_infinite())
-                    .then(None)
-                    .otherwise(pl.col(col))
-                    .alias(col)
-                )
+            if col in df.columns:
+                inf_count = df[col].is_infinite().sum()
+                if inf_count > 0:
+                    logger.warning(f"Found {inf_count} infinite values in {col}, replacing with null")
                 
         logger.info(f"Generated {len(feature_cols)} path features")
