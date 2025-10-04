@@ -148,10 +148,9 @@ class VolatilityFeatures:
     def _add_regime_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """Add regime classification features."""
         return df.with_columns([
-            # Percentile rank
-            pl.col('RV_daily')
-            .rank()
-            .over(pl.col('session_date').rolling_index(window_size='252d'))
+            # Percentile rank (fixed for Polars compatibility)
+            (pl.col('RV_daily').rank().cast(pl.Float64) / pl.len())
+            .over(pl.col('session_date'))
             .alias(f'{self.PREFIX}rv_percentile'),
             
             # Quantile bins

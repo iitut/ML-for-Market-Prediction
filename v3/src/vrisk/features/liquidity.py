@@ -245,9 +245,8 @@ class LiquidityFeatures:
         """Add relative liquidity measures."""
         return df.with_columns([
             # Relative volume (percentile rank in last 60 days)
-            pl.col(f'{self.PREFIX}daily_volume')
-            .rank()
-            .over(pl.col('session_date').rolling_index(window_size='60d'))
+            # Volume percentile (fixed for Polars compatibility)
+            (pl.col(f'{self.PREFIX}daily_volume').rank().cast(pl.Float64) / pl.len())
             .alias(f'{self.PREFIX}volume_percentile'),
             
             # Abnormal volume flag

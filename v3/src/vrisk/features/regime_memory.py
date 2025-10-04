@@ -136,9 +136,8 @@ class RegimeMemoryFeatures:
             .alias(f'{self.PREFIX}vr_quintile'),
             
             # VR percentile rank
-            pl.col(f'{self.PREFIX}vr_20d')
-            .rank()
-            .over(pl.col('session_date').rolling_index(window_size='252d'))
+            # VR percentile (fixed for Polars compatibility)
+            (pl.col(f'{self.PREFIX}vr_20d').rank().cast(pl.Float64) / pl.len())
             .alias(f'{self.PREFIX}vr_percentile')
         ])
         

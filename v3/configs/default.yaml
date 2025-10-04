@@ -17,7 +17,7 @@ project:
 # Debug mode (REMOVE LIMITS FOR PRODUCTION)
 debug:
   enabled: true  # Set to false for full dataset
-  last_n_sessions: 2  # Only used if enabled=true
+  last_n_sessions: 100  # Only used if enabled=true
   
 # Target configuration
 targets:

@@ -1,0 +1,233 @@
+[2025-10-04 02:08:24,455][__main__][INFO] - Configuration:
+[2025-10-04 02:08:24,461][__main__][INFO] - data:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP
+  master_parquet: ${data.base_path}/Data/master_minute.parquet
+  master_csv: ${data.base_path}/Data/master_minute.csv
+output:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP/MODELS/v3
+  artifacts: ${output.base_path}/artifacts
+  reports: ${output.base_path}/reports
+  models: ${output.base_path}/models
+  cache: ${output.base_path}/cache
+create_dirs: true
+n_splits: 8
+min_train_days: 252
+test_days: 63
+embargo_days: 1
+purge_days: 1
+anchored: true
+test_start: '2025-01-01'
+test_end: '2025-08-29'
+validation_size: 0.2
+time_features:
+  lookback_days:
+  - 5
+  - 10
+  - 20
+  - 60
+  - 120
+  lookback_minutes:
+  - 30
+  - 60
+  - 120
+  - 390
+feature_selection:
+  enabled: false
+  method: mutual_info
+  top_k: 100
+sample_weighting:
+  time_decay: false
+  decay_halflife: 252
+  regime_weighting: false
+  high_vol_weight: 1.5
+parallel:
+  n_jobs: -1
+  backend: loky
+seed: 42
+verbose: 1
+features:
+  volatility:
+    enabled: true
+    lookback_windows:
+    - 5
+    - 10
+    - 20
+    - 60
+    ewma_lambda: 0.94
+  microstructure:
+    enabled: true
+  path:
+    enabled: true
+  liquidity:
+    enabled: true
+  macro_time:
+    enabled: true
+  regime_memory:
+    enabled: true
+  event_flags:
+    enabled: true
+models:
+  lgbm_cls:
+    params:
+      n_estimators: 400
+      learning_rate: 0.05
+      num_leaves: 31
+      max_depth: -1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_lambda: 0.0
+      min_child_samples: 20
+      random_state: 42
+ensemble:
+  classification_bases:
+  - lightgbm
+  - xgboost
+  - catboost
+  - elastic_net
+  - svm_rbf
+  - random_forest
+  volatility_bases:
+  - har_rv
+  - elastic_net
+  - lightgbm
+  - xgboost
+  - catboost
+  - random_forest
+  quantile_bases:
+  - lightgbm_quantile
+  - quantile_forest
+  meta:
+    classification: lightgbm
+    volatility: elastic_net
+    quantile: lightgbm
+  regime_gating:
+    enabled: false
+    vr_quintiles: 5
+    include_opx: true
+project:
+  name: vol-risk-lab
+  version: 3.0.0
+  run_id: ${now:%Y-%m-%d_%H%M%S}
+  seed: 42
+  device: cpu
+debug:
+  enabled: true
+  last_n_sessions: 2
+targets:
+  gammas:
+  - 1.5
+  - 2.0
+  - 2.5
+  - 3.0
+  default_gamma: 2.0
+  horizons:
+    primary: 1
+    extended:
+    - 5
+    - 21
+  quantiles:
+  - 0.05
+  - 0.5
+  - 0.95
+decision:
+  mode: forced
+  cost_matrix:
+    crash_crash: 2.0
+    crash_normal: -0.5
+    crash_boom: -1.0
+    normal_crash: -2.0
+    normal_normal: 0.1
+    normal_boom: -1.5
+    boom_crash: -1.0
+    boom_normal: -0.5
+    boom_boom: 2.0
+  threshold_search:
+    tau_c_range:
+    - 0.2
+    - 0.5
+    tau_b_range:
+    - 0.2
+    - 0.5
+    n_trials: 100
+  calibration:
+    method: temperature
+    cv_folds: 3
+imbalance:
+  class_weight: balanced
+  sample_weight_power: 1.0
+  focal_loss:
+    enabled: false
+    gamma: 2.0
+tracking:
+  backend: mlflow
+  experiment_name: vol-risk-lab-v3
+  log_models: true
+  log_artifacts: true
+  log_metrics: true
+  log_params: true
+compute:
+  n_jobs: -1
+  chunk_size: 10000
+  cache_features: true
+  use_gpu: false
+validation:
+  check_monotone_timestamps: true
+  check_session_integrity: true
+  check_na_policy: true
+  check_future_leakage: true
+reporting:
+  generate_html: true
+  generate_pdf: false
+  chart_dpi: 150
+  chart_size_multiplier: 2
+  color_palette: colorblind
+  bootstrap_iterations: 1000
+
+[2025-10-04 02:08:24,464][__main__][INFO] - Starting COMPLETE VOL-RISK LAB training: 20251004_020824
+[2025-10-04 02:08:24,464][__main__][INFO] - ============================================================
+[2025-10-04 02:08:24,464][__main__][INFO] - STEP 1: Loading and validating data
+[2025-10-04 02:08:24,466][src.vrisk.io.load_master_robust][INFO] - Loading data from C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\Data\master_minute.parquet
+[2025-10-04 02:08:24,521][src.vrisk.io.load_master_robust][WARNING] - Missing columns detected: {'eod_Close'}
+[2025-10-04 02:08:24,553][src.vrisk.io.load_master_robust][INFO] - Running robust validation checks...
+[2025-10-04 02:08:24,575][src.vrisk.io.load_master_robust][INFO] - Robust validation completed
+[2025-10-04 02:08:24,578][src.vrisk.io.load_master_robust][INFO] - Data hash: 3701db17
+[2025-10-04 02:08:24,692][src.vrisk.io.load_master_robust][INFO] - Overall missing data: 5.79%
+[2025-10-04 02:08:24,692][src.vrisk.io.load_master_robust][INFO] - Top missing columns: eod_Close: 100.0%, early_close_minutes_local: 99.6%, iex_bid_price: 1.7%, iex_bid_size: 1.7%, iex_ask_price: 1.7%
+[2025-10-04 02:08:24,774][__main__][INFO] - Loaded 800 minute records
+[2025-10-04 02:08:24,774][__main__][INFO] - Date range: 2025-08-21 to 2025-08-22
+[2025-10-04 02:08:24,774][__main__][INFO] - ============================================================
+[2025-10-04 02:08:24,774][__main__][INFO] - STEP 2: Creating labels (classification + volatility + quantiles)
+[2025-10-04 02:08:24,776][src.vrisk.labeling.minute_returns][INFO] - Calculating minute returns from ohlcv_close
+[2025-10-04 02:08:24,783][src.vrisk.labeling.minute_returns][INFO] - Return statistics: {'mean': 1.715161062147067e-05, 'std': 0.0005214809039397461, 'min': -0.002039278979541592, 'max': 0.008078927715161832, 'q01': -0.001364341296905991, 'q99': 0.0013486887362033073}
+[2025-10-04 02:08:24,783][src.vrisk.labeling.rv_daily][INFO] - Calculating daily volatility measures
+[2025-10-04 02:08:24,789][src.vrisk.labeling.crash_boom_labels][INFO] - Creating crash/boom labels for gammas: [1.5, 2.0, 2.5, 3.0]
+[2025-10-04 02:08:24,792][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 1.5: normal = 1 (50.00%)
+[2025-10-04 02:08:24,792][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 1.5: boom = 1 (50.00%)
+[2025-10-04 02:08:24,792][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 2.0: normal = 2 (100.00%)
+[2025-10-04 02:08:24,793][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 2.5: normal = 2 (100.00%)
+[2025-10-04 02:08:24,793][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 3.0: normal = 2 (100.00%)
+[2025-10-04 02:08:24,793][src.vrisk.labeling.crash_boom_labels][INFO] - Z-score statistics: {'mean': 1.627710393973379, 'std': None, 'min': 1.627710393973379, 'max': 1.627710393973379}
+[2025-10-04 02:08:24,810][__main__][ERROR] - Training failed: datatypes of join keys don't match - `session_date`: date on left does not match `session_date`: datetime[ms] on right (and no other type was available to cast to)
+Traceback (most recent call last):
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\scripts\train_complete.py", line 106, in run
+    minute_df, daily_df = self._create_all_labels(minute_df)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\scripts\train_complete.py", line 272, in _create_all_labels
+    daily_df = daily_df.join(tmp, on='session_date', how='left')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\env_for_models\v3_env\Lib\site-packages\polars\_utils\deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\env_for_models\v3_env\Lib\site-packages\polars\dataframe\frame.py", line 8104, in join
+    .collect(optimizations=QueryOptFlags._eager())
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\env_for_models\v3_env\Lib\site-packages\polars\_utils\deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\env_for_models\v3_env\Lib\site-packages\polars\lazyframe\opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\env_for_models\v3_env\Lib\site-packages\polars\lazyframe\frame.py", line 2415, in collect
+    return wrap_df(ldf.collect(engine, callback))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+polars.exceptions.SchemaError: datatypes of join keys don't match - `session_date`: date on left does not match `session_date`: datetime[ms] on right (and no other type was available to cast to)

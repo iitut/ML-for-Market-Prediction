@@ -1,0 +1,261 @@
+[2025-10-04 02:09:30,474][__main__][INFO] - Configuration:
+[2025-10-04 02:09:30,480][__main__][INFO] - data:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP
+  master_parquet: ${data.base_path}/Data/master_minute.parquet
+  master_csv: ${data.base_path}/Data/master_minute.csv
+output:
+  base_path: C:/Users/shyto/Downloads/Closing-Auction Variance Measures/ML_MP/MODELS/v3
+  artifacts: ${output.base_path}/artifacts
+  reports: ${output.base_path}/reports
+  models: ${output.base_path}/models
+  cache: ${output.base_path}/cache
+create_dirs: true
+n_splits: 8
+min_train_days: 252
+test_days: 63
+embargo_days: 1
+purge_days: 1
+anchored: true
+test_start: '2025-01-01'
+test_end: '2025-08-29'
+validation_size: 0.2
+time_features:
+  lookback_days:
+  - 5
+  - 10
+  - 20
+  - 60
+  - 120
+  lookback_minutes:
+  - 30
+  - 60
+  - 120
+  - 390
+feature_selection:
+  enabled: false
+  method: mutual_info
+  top_k: 100
+sample_weighting:
+  time_decay: false
+  decay_halflife: 252
+  regime_weighting: false
+  high_vol_weight: 1.5
+parallel:
+  n_jobs: -1
+  backend: loky
+seed: 42
+verbose: 1
+features:
+  volatility:
+    enabled: true
+    lookback_windows:
+    - 5
+    - 10
+    - 20
+    - 60
+    ewma_lambda: 0.94
+  microstructure:
+    enabled: true
+  path:
+    enabled: true
+  liquidity:
+    enabled: true
+  macro_time:
+    enabled: true
+  regime_memory:
+    enabled: true
+  event_flags:
+    enabled: true
+models:
+  lgbm_cls:
+    params:
+      n_estimators: 400
+      learning_rate: 0.05
+      num_leaves: 31
+      max_depth: -1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_lambda: 0.0
+      min_child_samples: 20
+      random_state: 42
+ensemble:
+  classification_bases:
+  - lightgbm
+  - xgboost
+  - catboost
+  - elastic_net
+  - svm_rbf
+  - random_forest
+  volatility_bases:
+  - har_rv
+  - elastic_net
+  - lightgbm
+  - xgboost
+  - catboost
+  - random_forest
+  quantile_bases:
+  - lightgbm_quantile
+  - quantile_forest
+  meta:
+    classification: lightgbm
+    volatility: elastic_net
+    quantile: lightgbm
+  regime_gating:
+    enabled: false
+    vr_quintiles: 5
+    include_opx: true
+project:
+  name: vol-risk-lab
+  version: 3.0.0
+  run_id: ${now:%Y-%m-%d_%H%M%S}
+  seed: 42
+  device: cpu
+debug:
+  enabled: true
+  last_n_sessions: 2
+targets:
+  gammas:
+  - 1.5
+  - 2.0
+  - 2.5
+  - 3.0
+  default_gamma: 2.0
+  horizons:
+    primary: 1
+    extended:
+    - 5
+    - 21
+  quantiles:
+  - 0.05
+  - 0.5
+  - 0.95
+decision:
+  mode: forced
+  cost_matrix:
+    crash_crash: 2.0
+    crash_normal: -0.5
+    crash_boom: -1.0
+    normal_crash: -2.0
+    normal_normal: 0.1
+    normal_boom: -1.5
+    boom_crash: -1.0
+    boom_normal: -0.5
+    boom_boom: 2.0
+  threshold_search:
+    tau_c_range:
+    - 0.2
+    - 0.5
+    tau_b_range:
+    - 0.2
+    - 0.5
+    n_trials: 100
+  calibration:
+    method: temperature
+    cv_folds: 3
+imbalance:
+  class_weight: balanced
+  sample_weight_power: 1.0
+  focal_loss:
+    enabled: false
+    gamma: 2.0
+tracking:
+  backend: mlflow
+  experiment_name: vol-risk-lab-v3
+  log_models: true
+  log_artifacts: true
+  log_metrics: true
+  log_params: true
+compute:
+  n_jobs: -1
+  chunk_size: 10000
+  cache_features: true
+  use_gpu: false
+validation:
+  check_monotone_timestamps: true
+  check_session_integrity: true
+  check_na_policy: true
+  check_future_leakage: true
+reporting:
+  generate_html: true
+  generate_pdf: false
+  chart_dpi: 150
+  chart_size_multiplier: 2
+  color_palette: colorblind
+  bootstrap_iterations: 1000
+
+[2025-10-04 02:09:30,483][__main__][INFO] - Starting COMPLETE VOL-RISK LAB training: 20251004_020930
+[2025-10-04 02:09:30,483][__main__][INFO] - ============================================================
+[2025-10-04 02:09:30,483][__main__][INFO] - STEP 1: Loading and validating data
+[2025-10-04 02:09:30,485][src.vrisk.io.load_master_robust][INFO] - Loading data from C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\Data\master_minute.parquet
+[2025-10-04 02:09:30,535][src.vrisk.io.load_master_robust][WARNING] - Missing columns detected: {'eod_Close'}
+[2025-10-04 02:09:30,560][src.vrisk.io.load_master_robust][INFO] - Running robust validation checks...
+[2025-10-04 02:09:30,584][src.vrisk.io.load_master_robust][INFO] - Robust validation completed
+[2025-10-04 02:09:30,588][src.vrisk.io.load_master_robust][INFO] - Data hash: 3701db17
+[2025-10-04 02:09:30,702][src.vrisk.io.load_master_robust][INFO] - Overall missing data: 5.79%
+[2025-10-04 02:09:30,702][src.vrisk.io.load_master_robust][INFO] - Top missing columns: eod_Close: 100.0%, early_close_minutes_local: 99.6%, iex_bid_price: 1.7%, iex_bid_size: 1.7%, iex_ask_price: 1.7%
+[2025-10-04 02:09:30,784][__main__][INFO] - [DEBUG] Using last 2 sessions: 2025-08-21 to 2025-08-22 (2 sessions, 800 minute rows)
+[2025-10-04 02:09:30,784][__main__][INFO] - Loaded 800 minute records
+[2025-10-04 02:09:30,784][__main__][INFO] - Date range: 2025-08-21 to 2025-08-22
+[2025-10-04 02:09:30,784][__main__][INFO] - ============================================================
+[2025-10-04 02:09:30,784][__main__][INFO] - STEP 2: Creating labels (classification + volatility + quantiles)
+[2025-10-04 02:09:30,784][src.vrisk.labeling.minute_returns][INFO] - Calculating minute returns from ohlcv_close
+[2025-10-04 02:09:30,788][src.vrisk.labeling.minute_returns][INFO] - Return statistics: {'mean': 1.715161062147067e-05, 'std': 0.0005214809039397461, 'min': -0.002039278979541592, 'max': 0.008078927715161832, 'q01': -0.001364341296905991, 'q99': 0.0013486887362033073}
+[2025-10-04 02:09:30,788][src.vrisk.labeling.rv_daily][INFO] - Calculating daily volatility measures
+[2025-10-04 02:09:30,794][src.vrisk.labeling.crash_boom_labels][INFO] - Creating crash/boom labels for gammas: [1.5, 2.0, 2.5, 3.0]
+[2025-10-04 02:09:30,797][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 1.5: normal = 1 (50.00%)
+[2025-10-04 02:09:30,797][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 1.5: boom = 1 (50.00%)
+[2025-10-04 02:09:30,797][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 2.0: normal = 2 (100.00%)
+[2025-10-04 02:09:30,797][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 2.5: normal = 2 (100.00%)
+[2025-10-04 02:09:30,798][src.vrisk.labeling.crash_boom_labels][INFO] - Gamma 3.0: normal = 2 (100.00%)
+[2025-10-04 02:09:30,798][src.vrisk.labeling.crash_boom_labels][INFO] - Z-score statistics: {'mean': 1.627710393973379, 'std': None, 'min': 1.627710393973379, 'max': 1.627710393973379}
+[2025-10-04 02:09:30,814][__main__][INFO] - ============================================================
+[2025-10-04 02:09:30,814][__main__][INFO] - STEP 3: Generating complete feature set
+[2025-10-04 02:09:30,814][__main__][INFO] - Generating complete feature set...
+[2025-10-04 02:09:30,814][src.vrisk.features.vol_rv_bv_jv][INFO] - Generating volatility features
+[2025-10-04 02:09:30,818][__main__][ERROR] - Volatility features failed: 'Expr' object has no attribute 'rolling_index'
+[2025-10-04 02:09:30,819][src.vrisk.features.microstructure_iex][INFO] - Generating microstructure features
+[2025-10-04 02:09:30,826][src.vrisk.features.microstructure_iex][INFO] - Generated 77 microstructure features
+[2025-10-04 02:09:30,826][src.vrisk.features.path_gaps][INFO] - Generating path features
+[2025-10-04 02:09:30,833][__main__][ERROR] - Path features failed: column with name 'session_date_right' already exists
+
+You may want to try:
+- renaming the column prior to joining
+- using the `suffix` parameter to specify a suffix different to the default one ('_right')
+[2025-10-04 02:09:30,834][src.vrisk.features.liquidity][INFO] - Generating liquidity features
+[2025-10-04 02:09:30,840][__main__][ERROR] - Liquidity features failed: 'Expr' object has no attribute 'rolling_index'
+[2025-10-04 02:09:30,840][src.vrisk.features.macro_time][INFO] - Generating macro and time features
+[2025-10-04 02:09:30,847][src.vrisk.features.regime_memory][INFO] - Generating regime and memory features
+[2025-10-04 02:09:30,851][__main__][ERROR] - Regime features failed: 'Expr' object has no attribute 'rolling_index'
+[2025-10-04 02:09:30,851][src.vrisk.features.event_flags][INFO] - Generating event flag features
+[2025-10-04 02:09:30,854][__main__][ERROR] - Event features failed: unable to find column "liq_daily_volume"; valid columns: ["session_date", "daily_return", "daily_return_sum", "daily_open", "daily_high", "daily_low", "daily_close", "daily_volume", "next_day_return", "next_day_return_sum", "RV_daily", "n_minutes", "trading_days_year", "BV_daily", "JV_daily", "daily_open_right", "daily_high_right", "daily_low_right", "daily_close_right", "parkinson_var", "garman_klass_var", "rogers_satchell_var", "daily_range", "overnight_gap", "RVol_daily", "BVol_daily", "JVol_daily", "RVol_annual", "log_RV_daily", "jump_ratio", "realized_skew", "realized_kurt", "downside_var", "upside_var", "variance_ratio", "z_score_next", "volatility_for_z", "z_score_next_clipped", "label_gamma_1.5", "label_gamma_1.5_numeric", "dist_to_crash_1.5", "dist_to_boom_1.5", "min_dist_threshold_1.5", "label_gamma_2.0", "label_gamma_2.0_numeric", "dist_to_crash_2.0", "dist_to_boom_2.0", "min_dist_threshold_2.0", "label_gamma_2.5", "label_gamma_2.5_numeric", "dist_to_crash_2.5", "dist_to_boom_2.5", "min_dist_threshold_2.5", "label_gamma_3.0", "label_gamma_3.0_numeric", "dist_to_crash_3.0", "dist_to_boom_3.0", "min_dist_threshold_3.0", "target_log_rv_1d", "target_return_1d", "target_log_rv_5d", "target_return_5d", "is_holiday", "is_early_close", "early_close_minutes_local", "is_weekly", "is_monthly_third_friday", "is_quarterly_eoq", "is_opx", "event_days_to_opx", "iex_bid_price_mean", "iex_bid_size_sum", "iex_bid_size_mean", "iex_ask_price_mean", "iex_ask_size_sum", "iex_ask_size_mean", "iex_mid_price_mean", "iex_spread_abs_mean", "iex_spread_abs_std", "iex_spread_abs_q75", "iex_spread_rel_mean", "iex_spread_rel_std", "iex_spread_rel_q75", "iex_effective_spread_mean", "iex_effective_spread_std", "iex_effective_spread_q75", "iex_log_spread_mean", "iex_log_spread_std", "iex_log_spread_q75", "iex_total_depth_sum", "iex_total_depth_mean", "iex_depth_imbalance_mean", "iex_depth_imbalance_std", "iex_depth_imbalance_q75", "iex_log_bid_size_sum", "iex_log_bid_size_mean", "iex_log_ask_size_sum", "iex_log_ask_size_mean", "iex_depth_ratio_sum", "iex_depth_ratio_mean", "iex_bid_dollar_depth_sum", "iex_bid_dollar_depth_mean", "iex_ask_dollar_depth_sum", "iex_ask_dollar_depth_mean", "iex_mid_return_mean", "iex_mid_vol_30m_mean", "iex_mid_vol_30m_std", "iex_mid_vol_30m_q75", "iex_price_pressure_mean", "iex_spread_change_mean", "iex_spread_change_std", "iex_spread_change_q75", "iex_spread_ma_30m_mean", "iex_spread_ma_30m_std", "iex_spread_ma_30m_q75", "iex_spread_vol_30m_mean", "iex_spread_vol_30m_std", "iex_spread_vol_30m_q75", "iex_imbalance_ma_30m_mean", "iex_imbalance_ma_30m_std", "iex_imbalance_ma_30m_q75", "iex_quote_intensity_30m_mean", "iex_spread_ma_60m_mean", "iex_spread_ma_60m_std", "iex_spread_ma_60m_q75", "iex_spread_vol_60m_mean", "iex_spread_vol_60m_std", "iex_spread_vol_60m_q75", "iex_imbalance_ma_60m_mean", "iex_imbalance_ma_60m_std", "iex_imbalance_ma_60m_q75", "iex_quote_intensity_60m_mean", "iex_spread_ma_120m_mean", "iex_spread_ma_120m_std", "iex_spread_ma_120m_q75", "iex_spread_vol_120m_mean", "iex_spread_vol_120m_std", "iex_spread_vol_120m_q75", "iex_imbalance_ma_120m_mean", "iex_imbalance_ma_120m_std", "iex_imbalance_ma_120m_q75", "iex_quote_intensity_120m_mean", "iex_spread_last_hour", "iex_spread_close", "iex_max_imbalance", "iex_noise_proxy", "iex_pre_data_flag", "time_day_of_week", "time_day_of_month", "time_week_of_year", "time_month", "time_quarter", "time_year", "time_trading_day_of_month", "time_trading_day_of_year", "time_days_since_holiday", "time_days_until_holiday", "time_month_sin", "time_month_cos", "time_dow_sin", "time_dow_cos", "time_dom_sin", "time_dom_cos", "time_is_q1", "time_is_q4", "time_is_month_end", "time_is_january", "time_is_december", "time_is_monday", "time_is_friday", "time_turn_of_month", "time_opex_week", "time_pre_holiday", "time_post_holiday", "time_is_summer", "time_tax_loss_season", "event_days_from_opx", "event_opx_week", "event_quad_witch", "event_vix_expiry", "event_earnings_month", "event_peak_earnings", "event_tech_earnings", "event_pre_earnings", "event_fomc_week", "event_jackson_hole", "event_nfp_day", "event_inflation_data", "event_quarter_end_rebal", "event_month_end_rebal", "event_russell_rebal", "event_sp_rebal"]
+[2025-10-04 02:09:30,855][__main__][INFO] - Generated 107 total features
+[2025-10-04 02:09:30,855][__main__][INFO] - Feature generation status: {'volatility': "failed: 'Expr' object has no attribute 'rolling_index'", 'microstructure': 'success', 'path': "failed: column with name 'session_date_right' already exists\n\nYou may want to try:\n- renaming the column prior to joining\n- using the `suffix` parameter to specify a suffix different to the default one ('_right')", 'liquidity': "failed: 'Expr' object has no attribute 'rolling_index'", 'macro_time': 'success', 'regime': "failed: 'Expr' object has no attribute 'rolling_index'", 'events': 'failed: unable to find column "liq_daily_volume"; valid columns: ["session_date", "daily_return", "daily_return_sum", "daily_open", "daily_high", "daily_low", "daily_close", "daily_volume", "next_day_return", "next_day_return_sum", "RV_daily", "n_minutes", "trading_days_year", "BV_daily", "JV_daily", "daily_open_right", "daily_high_right", "daily_low_right", "daily_close_right", "parkinson_var", "garman_klass_var", "rogers_satchell_var", "daily_range", "overnight_gap", "RVol_daily", "BVol_daily", "JVol_daily", "RVol_annual", "log_RV_daily", "jump_ratio", "realized_skew", "realized_kurt", "downside_var", "upside_var", "variance_ratio", "z_score_next", "volatility_for_z", "z_score_next_clipped", "label_gamma_1.5", "label_gamma_1.5_numeric", "dist_to_crash_1.5", "dist_to_boom_1.5", "min_dist_threshold_1.5", "label_gamma_2.0", "label_gamma_2.0_numeric", "dist_to_crash_2.0", "dist_to_boom_2.0", "min_dist_threshold_2.0", "label_gamma_2.5", "label_gamma_2.5_numeric", "dist_to_crash_2.5", "dist_to_boom_2.5", "min_dist_threshold_2.5", "label_gamma_3.0", "label_gamma_3.0_numeric", "dist_to_crash_3.0", "dist_to_boom_3.0", "min_dist_threshold_3.0", "target_log_rv_1d", "target_return_1d", "target_log_rv_5d", "target_return_5d", "is_holiday", "is_early_close", "early_close_minutes_local", "is_weekly", "is_monthly_third_friday", "is_quarterly_eoq", "is_opx", "event_days_to_opx", "iex_bid_price_mean", "iex_bid_size_sum", "iex_bid_size_mean", "iex_ask_price_mean", "iex_ask_size_sum", "iex_ask_size_mean", "iex_mid_price_mean", "iex_spread_abs_mean", "iex_spread_abs_std", "iex_spread_abs_q75", "iex_spread_rel_mean", "iex_spread_rel_std", "iex_spread_rel_q75", "iex_effective_spread_mean", "iex_effective_spread_std", "iex_effective_spread_q75", "iex_log_spread_mean", "iex_log_spread_std", "iex_log_spread_q75", "iex_total_depth_sum", "iex_total_depth_mean", "iex_depth_imbalance_mean", "iex_depth_imbalance_std", "iex_depth_imbalance_q75", "iex_log_bid_size_sum", "iex_log_bid_size_mean", "iex_log_ask_size_sum", "iex_log_ask_size_mean", "iex_depth_ratio_sum", "iex_depth_ratio_mean", "iex_bid_dollar_depth_sum", "iex_bid_dollar_depth_mean", "iex_ask_dollar_depth_sum", "iex_ask_dollar_depth_mean", "iex_mid_return_mean", "iex_mid_vol_30m_mean", "iex_mid_vol_30m_std", "iex_mid_vol_30m_q75", "iex_price_pressure_mean", "iex_spread_change_mean", "iex_spread_change_std", "iex_spread_change_q75", "iex_spread_ma_30m_mean", "iex_spread_ma_30m_std", "iex_spread_ma_30m_q75", "iex_spread_vol_30m_mean", "iex_spread_vol_30m_std", "iex_spread_vol_30m_q75", "iex_imbalance_ma_30m_mean", "iex_imbalance_ma_30m_std", "iex_imbalance_ma_30m_q75", "iex_quote_intensity_30m_mean", "iex_spread_ma_60m_mean", "iex_spread_ma_60m_std", "iex_spread_ma_60m_q75", "iex_spread_vol_60m_mean", "iex_spread_vol_60m_std", "iex_spread_vol_60m_q75", "iex_imbalance_ma_60m_mean", "iex_imbalance_ma_60m_std", "iex_imbalance_ma_60m_q75", "iex_quote_intensity_60m_mean", "iex_spread_ma_120m_mean", "iex_spread_ma_120m_std", "iex_spread_ma_120m_q75", "iex_spread_vol_120m_mean", "iex_spread_vol_120m_std", "iex_spread_vol_120m_q75", "iex_imbalance_ma_120m_mean", "iex_imbalance_ma_120m_std", "iex_imbalance_ma_120m_q75", "iex_quote_intensity_120m_mean", "iex_spread_last_hour", "iex_spread_close", "iex_max_imbalance", "iex_noise_proxy", "iex_pre_data_flag", "time_day_of_week", "time_day_of_month", "time_week_of_year", "time_month", "time_quarter", "time_year", "time_trading_day_of_month", "time_trading_day_of_year", "time_days_since_holiday", "time_days_until_holiday", "time_month_sin", "time_month_cos", "time_dow_sin", "time_dow_cos", "time_dom_sin", "time_dom_cos", "time_is_q1", "time_is_q4", "time_is_month_end", "time_is_january", "time_is_december", "time_is_monday", "time_is_friday", "time_turn_of_month", "time_opex_week", "time_pre_holiday", "time_post_holiday", "time_is_summer", "time_tax_loss_season", "event_days_from_opx", "event_opx_week", "event_quad_witch", "event_vix_expiry", "event_earnings_month", "event_peak_earnings", "event_tech_earnings", "event_pre_earnings", "event_fomc_week", "event_jackson_hole", "event_nfp_day", "event_inflation_data", "event_quarter_end_rebal", "event_month_end_rebal", "event_russell_rebal", "event_sp_rebal"]'}
+[2025-10-04 02:09:30,855][__main__][INFO] - ============================================================
+[2025-10-04 02:09:30,855][__main__][INFO] - STEP 4: Preparing data for all prediction heads
+[2025-10-04 02:09:30,862][__main__][INFO] - Prepared data shapes:
+[2025-10-04 02:09:30,862][__main__][INFO] -   X: (1, 107)
+[2025-10-04 02:09:30,862][__main__][INFO] -   Classification: (1,)
+[2025-10-04 02:09:30,863][__main__][INFO] -   Volatility: (1,)
+[2025-10-04 02:09:30,863][__main__][INFO] -   Returns: (1,)
+[2025-10-04 02:09:30,863][__main__][INFO] - ============================================================
+[2025-10-04 02:09:30,863][__main__][INFO] - STEP 5: Training all model components
+[2025-10-04 02:09:30,864][__main__][INFO] - Training classification ensemble...
+[2025-10-04 02:09:30,865][src.vrisk.ensembles.stacking_meta_cls][INFO] - Training stacking ensemble
+[2025-10-04 02:09:30,865][src.vrisk.ensembles.stacking_meta_cls][INFO] - Generating out-of-fold predictions
+[2025-10-04 02:09:30,865][src.vrisk.ensembles.stacking_meta_cls][INFO] - Generating OOF for lightgbm
+[2025-10-04 02:09:30,865][__main__][ERROR] - Training failed: Not enough data. Need 771 days, have 0
+Traceback (most recent call last):
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\scripts\train_complete.py", line 122, in run
+    models = self._train_all_models(X, y_cls, y_vol, y_ret, dates)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\scripts\train_complete.py", line 532, in _train_all_models
+    classification_ensemble.fit(X_train, y_cls_train, dates=dates_train)
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\src\vrisk\ensembles\stacking_meta_cls.py", line 78, in fit
+    self.oof_predictions_ = self._generate_oof_predictions(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\src\vrisk\ensembles\stacking_meta_cls.py", line 190, in _generate_oof_predictions
+    splits = self.cv_splitter.split(dates)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\shyto\Downloads\Closing-Auction Variance Measures\ML_MP\MODELS\v3\src\vrisk\training\cv_splitter.py", line 75, in split
+    raise ValueError(f"Not enough data. Need {required_days} days, have {n_dates}")
+ValueError: Not enough data. Need 771 days, have 0

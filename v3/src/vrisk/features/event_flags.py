@@ -207,9 +207,9 @@ class EventFlagFeatures:
             .rolling_sum(window_size=5, min_periods=1)
             .alias(f'{self.PREFIX}consecutive_down'),
             
-            # Extreme volume day
-            (pl.col('liq_daily_volume') > 
-             pl.col('liq_daily_volume').rolling_quantile(0.95, window_size=60, min_periods=30))
+            # Extreme volume day (check if column exists first)
+            (pl.col('daily_volume') >
+             pl.col('daily_volume').rolling_quantile(0.95, window_size=60, min_periods=30))
             .cast(pl.Int32)
             .alias(f'{self.PREFIX}extreme_volume'),
             

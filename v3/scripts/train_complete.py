@@ -181,8 +181,8 @@ class CompleteModelTrainer:
             )
             df = df.filter(pl.col("session_date").is_in(last_sessions))
             logger.info(
-                f"[DEBUG] Using last {n} sessions → "
-                f"{df['session_date'].min()} .. {df['session_date'].max()} "
+                f"[DEBUG] Using last {n} sessions: "
+                f"{df['session_date'].min()} to {df['session_date'].max()} "
                 f"({len(last_sessions)} sessions, {len(df):,} minute rows)"
             )
 
@@ -234,40 +234,33 @@ class CompleteModelTrainer:
             daily_df = daily_df.join(flag_df, on='session_date', how='left')
 
         # 6) Precompute 'event_days_to_opx' if we have 'is_opx'
-                # 6) Precompute 'event_days_to_opx' if we have 'is_opx'
         if 'is_opx' in daily_df.columns:
             df_pd = daily_df.select(['session_date', 'is_opx']).to_pandas()
-            df_pd['session_date'] = pd.to_datetime(df_pd['session_date'])
+            df_pd['session_date'] = pd.to_datetime(df_pd['session_date']).dt.date  # FIX: Convert to date
             df_pd = df_pd.sort_values('session_date').set_index('session_date')
 
             opx_dates = df_pd.index[df_pd['is_opx'].fillna(False).astype(bool)]
             if len(opx_dates) > 0:
                 s_next = pd.Series(opx_dates.values, index=opx_dates)
                 next_opx = s_next.reindex(df_pd.index, method='bfill')
-                days_to_next = (next_opx.values - df_pd.index.values).astype('timedelta64[D]').astype('float')
+                days_to_next = (pd.to_datetime(next_opx.values) - pd.to_datetime(df_pd.index.values)).days.astype('float')
                 df_pd['event_days_to_opx'] = days_to_next
             else:
                 df_pd['event_days_to_opx'] = np.nan
 
             tmp = pl.from_pandas(df_pd[['event_days_to_opx']].reset_index())
 
-            # Ensure the date column is named 'session_date' regardless of pandas' reset_index naming
-            rename_map = {}
+            # FIX: Ensure session_date is pl.Date type to match daily_df
             if 'session_date' not in tmp.columns:
-                # Common alternatives produced by reset_index in some cases
                 for cand in ('index', 'level_0'):
                     if cand in tmp.columns:
-                        rename_map[cand] = 'session_date'
+                        tmp = tmp.rename({cand: 'session_date'})
                         break
-            if rename_map:
-                tmp = tmp.rename(rename_map)
-
-            # Final sanity: if still missing, raise a helpful error
-            if 'session_date' not in tmp.columns:
-                raise RuntimeError(
-                    f"Could not locate the session date column after reset_index. "
-                    f"Columns were: {tmp.columns}"
-                )
+            
+            # Convert to pl.Date to match daily_df
+            tmp = tmp.with_columns(
+                pl.col('session_date').cast(pl.Date)
+            )
 
             daily_df = daily_df.join(tmp, on='session_date', how='left')
 

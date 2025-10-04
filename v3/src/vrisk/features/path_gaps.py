@@ -45,8 +45,8 @@ class PathFeatures:
         # Calculate intraday features from minute data
         intraday_features = self._calculate_intraday_features(minute_df)
         
-        # Merge with daily data
-        df = daily_df.join(intraday_features, on='session_date', how='left')
+        # Merge with daily data (with suffix to avoid conflicts)
+        df = daily_df.join(intraday_features, on='session_date', how='left', suffix='_intraday')
         
         # Add gap features
         df = self._add_gap_features(df)
